@@ -1,27 +1,55 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
 #include <iostream>
 
+// stb_image is used to load image files (PNG, JPG, etc.)
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
+/*
+    =========================
+    Shader source code
+    =========================
+    In later phases, these will move to separate files
+*/
+
+// Vertex shader:
+// - Takes in position and texture coordinates
+// - Passes texture coordinates to fragment shader
 const char* vertexShaderSrc = R"(
 #version 330 core
-layout (location = 0) in vec3 aPos;
+
+layout (location = 0) in vec3 aPos;   // Vertex position
+layout (location = 1) in vec2 aTex;   // Texture coordinate
+
+out vec2 TexCoord;
 
 void main()
 {
     gl_Position = vec4(aPos, 1.0);
+    TexCoord = aTex;
 }
 )";
 
+// Fragment shader:
+// - Samples from a texture
+// - Outputs final pixel color
 const char* fragmentShaderSrc = R"(
 #version 330 core
+
 out vec4 FragColor;
+in vec2 TexCoord;
+
+uniform sampler2D uTexture;
 
 void main()
 {
-    FragColor = vec4(1.0, 0.4, 0.2, 1.0);
+    FragColor = texture(uTexture, TexCoord);
 }
 )";
 
+// Resize callback so OpenGL knows window size
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
@@ -29,18 +57,22 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 
 int main()
 {
-    // 1. Init GLFW
+    /*
+        =========================
+        GLFW initialization
+        =========================
+    */
     if (!glfwInit())
     {
-        std::cerr << "Failed to init GLFW\n";
+        std::cerr << "Failed to initialize GLFW\n";
         return -1;
     }
 
+    // Request OpenGL 3.3 Core
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    // 2. Create window
     GLFWwindow* window = glfwCreateWindow(800, 600, "Myth Client", nullptr, nullptr);
     if (!window)
     {
@@ -52,48 +84,85 @@ int main()
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
-    // 3. Load OpenGL
+    /*
+        =========================
+        GLAD initialization
+        =========================
+    */
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
-        std::cerr << "Failed to init GLAD\n";
+        std::cerr << "Failed to initialize GLAD\n";
         return -1;
     }
 
-    // 4. Triangle data
+    /*
+        =========================
+        Quad vertex data
+        =========================
+        A quad made of two triangles
+
+        Position (x, y, z)
+        Texture (u, v)
+    */
     float vertices[] = {
-        -0.5f, -0.5f, 0.0f,
-         0.5f, -0.5f, 0.0f,
-         0.0f,  0.5f, 0.0f
+        // positions        // tex coords
+        -0.5f, -0.5f, 0.0f,  0.0f, 0.0f, // bottom-left
+         0.5f, -0.5f, 0.0f,  1.0f, 0.0f, // bottom-right
+         0.5f,  0.5f, 0.0f,  1.0f, 1.0f, // top-right
+        -0.5f,  0.5f, 0.0f,  0.0f, 1.0f  // top-left
     };
 
-    unsigned int VBO, VAO;
+    unsigned int indices[] = {
+        0, 1, 2,
+        2, 3, 0
+    };
+
+    unsigned int VAO, VBO, EBO;
+
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
+    glGenBuffers(1, &EBO);
 
     glBindVertexArray(VAO);
 
+    // Vertex buffer
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    // Element buffer
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    // Position attribute
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
-    // 5. Compile shaders
-    auto compileShader = [](GLenum type, const char* src) {
-        unsigned int shader = glCreateShader(type);
-        glShaderSource(shader, 1, &src, nullptr);
-        glCompileShader(shader);
+    // Texture coordinate attribute
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
+        (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
-        int success;
-        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-        if (!success)
+    /*
+        =========================
+        Shader compilation
+        =========================
+    */
+    auto compileShader = [](GLenum type, const char* src)
         {
-            char infoLog[512];
-            glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-            std::cerr << "Shader error:\n" << infoLog << std::endl;
-        }
-        return shader;
-    };
+            unsigned int shader = glCreateShader(type);
+            glShaderSource(shader, 1, &src, nullptr);
+            glCompileShader(shader);
+
+            int success;
+            glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+            if (!success)
+            {
+                char infoLog[512];
+                glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+                std::cerr << "Shader compile error:\n" << infoLog << std::endl;
+            }
+            return shader;
+        };
 
     unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSrc);
     unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSrc);
@@ -106,7 +175,42 @@ int main()
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
-    // 6. Render loop
+    /*
+        =========================
+        Texture loading
+        =========================
+    */
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Texture wrapping & filtering
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int width, height, channels;
+    stbi_set_flip_vertically_on_load(true);
+
+    unsigned char* data = stbi_load("assets/test.png", &width, &height, &channels, 4);
+    if (!data)
+    {
+        std::cerr << "Failed to load texture: " << stbi_failure_reason() << "\n";
+        return -1;
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(data);
+
+    /*
+        =========================
+        Render loop
+        =========================
+    */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -115,8 +219,9 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT);
 
         glUseProgram(shaderProgram);
+        glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
         glfwSwapBuffers(window);
     }
