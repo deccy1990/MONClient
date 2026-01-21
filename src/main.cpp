@@ -2,39 +2,46 @@
 #include <GLFW/glfw3.h>
 
 #include <iostream>
+#include <filesystem>
+
+#include "SpriteRenderer.h"
+#include "Camera2D.h"
+
+
 
 // stb_image is used to load image files (PNG, JPG, etc.)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 /*
-    =========================
-    Shader source code
-    =========================
-    In later phases, these will move to separate files
+    ============================================
+    Shaders
+    ============================================
+    These match what SpriteRenderer expects:
+      uniform mat4 uProjection;
+      uniform mat4 uModel;
+      uniform sampler2D uTexture;
 */
 
-// Vertex shader:
-// - Takes in position and texture coordinates
-// - Passes texture coordinates to fragment shader
 const char* vertexShaderSrc = R"(
 #version 330 core
 
-layout (location = 0) in vec3 aPos;   // Vertex position
-layout (location = 1) in vec2 aTex;   // Texture coordinate
+layout (location = 0) in vec2 aPos;
+layout (location = 1) in vec2 aTex;
 
 out vec2 TexCoord;
 
+uniform mat4 uProjection;
+uniform mat4 uModel;
+
 void main()
 {
-    gl_Position = vec4(aPos, 1.0);
+    vec4 worldPos = uModel * vec4(aPos, 0.0, 1.0);
+    gl_Position = uProjection * worldPos;
     TexCoord = aTex;
 }
 )";
 
-// Fragment shader:
-// - Samples from a texture
-// - Outputs final pixel color
 const char* fragmentShaderSrc = R"(
 #version 330 core
 
@@ -49,18 +56,92 @@ void main()
 }
 )";
 
-// Resize callback so OpenGL knows window size
+// Keep viewport in sync with framebuffer size
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
 }
 
+// Compile a shader and print errors
+static unsigned int CompileShader(GLenum type, const char* src)
+{
+    unsigned int shader = glCreateShader(type);
+    glShaderSource(shader, 1, &src, nullptr);
+    glCompileShader(shader);
+
+    int success = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[1024];
+        glGetShaderInfoLog(shader, 1024, nullptr, infoLog);
+        std::cerr << "Shader compile error:\n" << infoLog << "\n";
+    }
+    return shader;
+}
+
+// Link a shader program and print errors
+static unsigned int CreateProgram(const char* vsSrc, const char* fsSrc)
+{
+    unsigned int vs = CompileShader(GL_VERTEX_SHADER, vsSrc);
+    unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fsSrc);
+
+    unsigned int program = glCreateProgram();
+    glAttachShader(program, vs);
+    glAttachShader(program, fs);
+    glLinkProgram(program);
+
+    int success = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        char infoLog[1024];
+        glGetProgramInfoLog(program, 1024, nullptr, infoLog);
+        std::cerr << "Program link error:\n" << infoLog << "\n";
+    }
+
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    return program;
+}
+
+// Load a PNG/JPG file into an OpenGL texture and return the texture ID
+static GLuint LoadTextureRGBA(const char* path)
+{
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    // Sprite-friendly sampling (pixel art friendly); change later if you want smoothing
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int w = 0, h = 0, channels = 0;
+    stbi_set_flip_vertically_on_load(true);
+
+    // Force RGBA output for consistency (sprites often need alpha)
+    unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
+    if (!data)
+    {
+        std::cerr << "Failed to load texture '" << path << "': " << stbi_failure_reason() << "\n";
+        return 0;
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenerateMipmap(GL_TEXTURE_2D);
+
+    stbi_image_free(data);
+    return texture;
+}
+
 int main()
 {
     /*
-        =========================
-        GLFW initialization
-        =========================
+        ============================================
+        GLFW + window
+        ============================================
     */
     if (!glfwInit())
     {
@@ -68,7 +149,6 @@ int main()
         return -1;
     }
 
-    // Request OpenGL 3.3 Core
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -85,9 +165,9 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     /*
-        =========================
-        GLAD initialization
-        =========================
+        ============================================
+        GLAD
+        ============================================
     */
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -95,133 +175,93 @@ int main()
         return -1;
     }
 
-    /*
-        =========================
-        Quad vertex data
-        =========================
-        A quad made of two triangles
-
-        Position (x, y, z)
-        Texture (u, v)
-    */
-    float vertices[] = {
-        // positions        // tex coords
-        -0.5f, -0.5f, 0.0f,  0.0f, 0.0f, // bottom-left
-         0.5f, -0.5f, 0.0f,  1.0f, 0.0f, // bottom-right
-         0.5f,  0.5f, 0.0f,  1.0f, 1.0f, // top-right
-        -0.5f,  0.5f, 0.0f,  0.0f, 1.0f  // top-left
-    };
-
-    unsigned int indices[] = {
-        0, 1, 2,
-        2, 3, 0
-    };
-
-    unsigned int VAO, VBO, EBO;
-
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glGenBuffers(1, &EBO);
-
-    glBindVertexArray(VAO);
-
-    // Vertex buffer
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
-    // Element buffer
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-
-    // Position attribute
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-
-    // Texture coordinate attribute
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float),
-        (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
+    std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
 
     /*
-        =========================
-        Shader compilation
-        =========================
+        ============================================
+        Global render state
+        ============================================
+        Alpha blending is crucial for sprites with transparency.
     */
-    auto compileShader = [](GLenum type, const char* src)
-        {
-            unsigned int shader = glCreateShader(type);
-            glShaderSource(shader, 1, &src, nullptr);
-            glCompileShader(shader);
-
-            int success;
-            glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-            if (!success)
-            {
-                char infoLog[512];
-                glGetShaderInfoLog(shader, 512, nullptr, infoLog);
-                std::cerr << "Shader compile error:\n" << infoLog << std::endl;
-            }
-            return shader;
-        };
-
-    unsigned int vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSrc);
-    unsigned int fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSrc);
-
-    unsigned int shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /*
-        =========================
-        Texture loading
-        =========================
+        ============================================
+        Create shader program + load texture
+        ============================================
     */
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    // Texture wrapping & filtering
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    int width, height, channels;
-    stbi_set_flip_vertically_on_load(true);
-
-    unsigned char* data = stbi_load("assets/test.png", &width, &height, &channels, 4);
-    if (!data)
-    {
-        std::cerr << "Failed to load texture: " << stbi_failure_reason() << "\n";
+    GLuint shaderProgram = CreateProgram(vertexShaderSrc, fragmentShaderSrc);
+    if (!shaderProgram)
         return -1;
-    }
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-
-    stbi_image_free(data);
+    GLuint tex = LoadTextureRGBA("assets/test.png");
+    if (!tex)
+        return -1;
 
     /*
-        =========================
+        ============================================
+        Create sprite renderer
+        ============================================
+        We pass initial screen size. We'll update it each frame in case of resize.
+    */
+    int fbW = 0, fbH = 0;
+    glfwGetFramebufferSize(window, &fbW, &fbH);
+
+    SpriteRenderer renderer(shaderProgram, fbW, fbH);
+
+    // ------------------------------------
+// Create camera (world-space origin)
+// ------------------------------------
+    Camera2D camera({ 0.0f, 0.0f });
+
+    /*
+        ============================================
         Render loop
-        =========================
+        ============================================
     */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
+        // Keep renderer's projection correct on resize
+        glfwGetFramebufferSize(window, &fbW, &fbH);
+        renderer.SetScreenSize(fbW, fbH);
+
         glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUseProgram(shaderProgram);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glBindVertexArray(VAO);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+        float cameraSpeed = 300.0f; // pixels per second
+        float deltaTime = 0.016f;   // fixed step for now (we’ll improve this later)
+
+        // Keyboard scrolling (WASD + arrows)
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
+        {
+            camera.Move({ 0.0f, -cameraSpeed * deltaTime });
+        }
+
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
+        {
+            camera.Move({ 0.0f, cameraSpeed * deltaTime });
+        }
+
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
+        {
+            camera.Move({ -cameraSpeed * deltaTime, 0.0f });
+        }
+
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
+            glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
+        {
+            camera.Move({ cameraSpeed * deltaTime, 0.0f });
+        }
+
+        // Draw the same sprite at different positions to prove reusability
+        renderer.Draw(tex, { 100, 100 }, { 256, 256 }, camera);
+        renderer.Draw(tex, { 400, 150 }, { 128, 128 }, camera);
 
         glfwSwapBuffers(window);
     }
