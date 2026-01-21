@@ -11,6 +11,7 @@ target_include_directories(glad PUBLIC glad/include)
 add_executable(MONClient
     src/main.cpp
     src/SpriteRenderer.cpp
+    src/TileMap.cpp
 )
 
 

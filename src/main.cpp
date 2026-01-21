@@ -6,6 +6,7 @@
 
 #include "SpriteRenderer.h"
 #include "Camera2D.h"
+#include "TileMap.h"
 
 
 
@@ -215,6 +216,50 @@ int main()
 // ------------------------------------
     Camera2D camera({ 0.0f, 0.0f });
 
+
+    // ------------------------------------
+    // Load tile texture
+    // ------------------------------------
+    GLuint tileTex = LoadTextureRGBA("assets/tile.png");
+    if (!tileTex)
+        return -1;
+
+
+    // ------------------------------------
+// Create a tile map
+// ------------------------------------
+// Map dimensions in tiles
+    const int mapW = 100;
+    const int mapH = 100;
+
+    // Tile size in pixels (pick something like 32/48/64)
+    const int tileSize = 64;
+
+    TileMap map(mapW, mapH, tileSize);
+
+    // Fill the map with visible tiles (ID = 1)
+    for (int y = 0; y < mapH; ++y)
+    {
+        for (int x = 0; x < mapW; ++x)
+        {
+            map.SetTile(x, y, 1);
+        }
+    }
+
+
+    // Fill the map with a simple pattern so you can see movement clearly.
+    // Tile ID 1 = draw tile (non-zero)
+    for (int y = 0; y < mapH; ++y)
+    {
+        for (int x = 0; x < mapW; ++x)
+        {
+            // Checkerboard pattern (just for visibility)
+            int id = ((x + y) % 2 == 0) ? 1 : 1; // currently both are 1 (single texture)
+            map.SetTile(x, y, id);
+        }
+    }
+
+
     /*
         ============================================
         Render loop
@@ -258,6 +303,14 @@ int main()
         {
             camera.Move({ cameraSpeed * deltaTime, 0.0f });
         }
+
+        int fbW = 0, fbH = 0;
+        glfwGetFramebufferSize(window, &fbW, &fbH);
+        renderer.SetScreenSize(fbW, fbH);
+
+        // Draw tile map FIRST (background)
+        map.Draw(renderer, tileTex, camera, { fbW, fbH });
+
 
         // Draw the same sprite at different positions to prove reusability
         renderer.Draw(tex, { 100, 100 }, { 256, 256 }, camera);
