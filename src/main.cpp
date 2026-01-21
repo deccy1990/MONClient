@@ -4,27 +4,36 @@
 #include <iostream>
 #include <filesystem>
 
+// Engine modules
 #include "SpriteRenderer.h"
 #include "Camera2D.h"
 #include "TileMap.h"
+#include "TileSet.h"
 
-
-
-// stb_image is used to load image files (PNG, JPG, etc.)
+// stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 /*
-    ============================================
-    Shaders
-    ============================================
-    These match what SpriteRenderer expects:
-      uniform mat4 uProjection;
-      uniform mat4 uModel;
-      uniform sampler2D uTexture;
+    Texture2D
+    ---------
+    Small helper so we can keep:
+      - OpenGL texture ID
+      - the original image width/height (needed for atlas UV calculations)
 */
+struct Texture2D
+{
+    GLuint id = 0;
+    int width = 0;
+    int height = 0;
+};
 
-const char* vertexShaderSrc = R"(
+/*
+    ============================================
+    Shaders (SpriteRenderer expects these uniforms)
+    ============================================
+*/
+static const char* vertexShaderSrc = R"(
 #version 330 core
 
 layout (location = 0) in vec2 aPos;
@@ -43,7 +52,7 @@ void main()
 }
 )";
 
-const char* fragmentShaderSrc = R"(
+static const char* fragmentShaderSrc = R"(
 #version 330 core
 
 out vec4 FragColor;
@@ -57,13 +66,22 @@ void main()
 }
 )";
 
-// Keep viewport in sync with framebuffer size
-void framebuffer_size_callback(GLFWwindow* window, int width, int height)
+/*
+    ============================================
+    GLFW callbacks
+    ============================================
+*/
+static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int height)
 {
+    // Keep OpenGL viewport aligned with window framebuffer size
     glViewport(0, 0, width, height);
 }
 
-// Compile a shader and print errors
+/*
+    ============================================
+    Shader compile/link helpers
+    ============================================
+*/
 static unsigned int CompileShader(GLenum type, const char* src)
 {
     unsigned int shader = glCreateShader(type);
@@ -81,7 +99,6 @@ static unsigned int CompileShader(GLenum type, const char* src)
     return shader;
 }
 
-// Link a shader program and print errors
 static unsigned int CreateProgram(const char* vsSrc, const char* fsSrc)
 {
     unsigned int vs = CompileShader(GL_VERTEX_SHADER, vsSrc);
@@ -106,35 +123,48 @@ static unsigned int CreateProgram(const char* vsSrc, const char* fsSrc)
     return program;
 }
 
-// Load a PNG/JPG file into an OpenGL texture and return the texture ID
-static GLuint LoadTextureRGBA(const char* path)
+/*
+    ============================================
+    Texture loading
+    ============================================
+    - Loads PNG/JPG into OpenGL
+    - Returns Texture2D {id, width, height}
+*/
+static Texture2D LoadTextureRGBA(const char* path)
 {
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    Texture2D tex{};
 
-    // Sprite-friendly sampling (pixel art friendly); change later if you want smoothing
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    int w = 0, h = 0, channels = 0;
+    // IMPORTANT:
+    // We flip vertically so the image loads in the expected orientation for OpenGL UVs.
+    // Our TileSet code compensates so tileId 0 is the top-left tile in the atlas.
     stbi_set_flip_vertically_on_load(true);
 
-    // Force RGBA output for consistency (sprites often need alpha)
-    unsigned char* data = stbi_load(path, &w, &h, &channels, 4);
+    int channels = 0;
+    unsigned char* data = stbi_load(path, &tex.width, &tex.height, &channels, 4);
     if (!data)
     {
         std::cerr << "Failed to load texture '" << path << "': " << stbi_failure_reason() << "\n";
-        return 0;
+        tex.id = 0;
+        return tex;
     }
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glGenTextures(1, &tex.id);
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+
+    // IMPORTANT for atlases: clamp so UVs don't wrap into other tiles
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Pixel-art friendly sampling
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
 
     stbi_image_free(data);
-    return texture;
+    return tex;
 }
 
 int main()
@@ -173,6 +203,7 @@ int main()
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
         std::cerr << "Failed to initialize GLAD\n";
+        glfwTerminate();
         return -1;
     }
 
@@ -182,79 +213,95 @@ int main()
         ============================================
         Global render state
         ============================================
-        Alpha blending is crucial for sprites with transparency.
     */
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /*
         ============================================
-        Create shader program + load texture
+        Shader program
         ============================================
     */
     GLuint shaderProgram = CreateProgram(vertexShaderSrc, fragmentShaderSrc);
     if (!shaderProgram)
+    {
+        glfwTerminate();
         return -1;
-
-    GLuint tex = LoadTextureRGBA("assets/test.png");
-    if (!tex)
-        return -1;
+    }
 
     /*
         ============================================
-        Create sprite renderer
+        Load textures (ONCE)
         ============================================
-        We pass initial screen size. We'll update it each frame in case of resize.
+        Required files:
+          - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
+          - assets/test.png    (optional sprite test)
+    */
+    Texture2D atlas = LoadTextureRGBA("assets/tiles.png");
+    if (!atlas.id)
+    {
+        glfwTerminate();
+        return -1;
+    }
+
+    Texture2D testSprite = LoadTextureRGBA("assets/test.png");
+    if (!testSprite.id)
+    {
+        // Not fatal if you want — but we'll keep it strict for now
+        glfwTerminate();
+        return -1;
+    }
+
+    /*
+        ============================================
+        Create renderer + camera
+        ============================================
     */
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(window, &fbW, &fbH);
 
     SpriteRenderer renderer(shaderProgram, fbW, fbH);
 
-    // ------------------------------------
-// Create camera (world-space origin)
-// ------------------------------------
+    // Camera position is world-space top-left of viewport
     Camera2D camera({ 0.0f, 0.0f });
 
+    /*
+        ============================================
+        Create TileSet (atlas UV mapper) + TileMap
+        ============================================
+        Chosen tile size: 64x32
+    */
+    const int tileW = 64;
+    const int tileH = 32;
 
-    // ------------------------------------
-    // Load tile texture
-    // ------------------------------------
-    GLuint tileTex = LoadTextureRGBA("assets/tile.png");
-    if (!tileTex)
-        return -1;
+    TileSet tileset(atlas.width, atlas.height, tileW, tileH);
 
-
-    // ------------------------------------
-// Create a tile map
-// ------------------------------------
-// Map dimensions in tiles
     const int mapW = 100;
     const int mapH = 100;
 
-    // Tile size in pixels (pick something like 32/48/64)
-    const int tileSize = 64;
+    //Atlas debug size
 
-    TileMap map(mapW, mapH, tileSize);
+    std::cout << "atlas size: " << atlas.width << " x " << atlas.height << "\n";
 
-    // Fill the map with visible tiles (ID = 1)
-    for (int y = 0; y < mapH; ++y)
+
+    //Quick “proof test” (optional, 30 seconds)
+
+    TileMap map(mapW, mapH, tileW, tileH);
+
+    for (int i = 0; i < 8; ++i)
     {
-        for (int x = 0; x < mapW; ++x)
-        {
-            map.SetTile(x, y, 1);
-        }
+        glm::vec2 a, b;
+        tileset.GetUV(i, a, b);
+        std::cout << "tile " << i << " uvMin=(" << a.x << "," << a.y << ") uvMax=(" << b.x << "," << b.y << ")\n";
     }
 
 
-    // Fill the map with a simple pattern so you can see movement clearly.
-    // Tile ID 1 = draw tile (non-zero)
+    // Fill the map with IDs 1..8 (0 reserved as "empty")
     for (int y = 0; y < mapH; ++y)
     {
         for (int x = 0; x < mapW; ++x)
         {
-            // Checkerboard pattern (just for visibility)
-            int id = ((x + y) % 2 == 0) ? 1 : 1; // currently both are 1 (single texture)
+            int id = (x + y) % 8;  // valid atlas ids: 0..7
             map.SetTile(x, y, id);
         }
     }
@@ -262,59 +309,61 @@ int main()
 
     /*
         ============================================
-        Render loop
+        Main loop
         ============================================
     */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
-        // Keep renderer's projection correct on resize
+        // Update framebuffer size (needed for projection + culling)
         glfwGetFramebufferSize(window, &fbW, &fbH);
         renderer.SetScreenSize(fbW, fbH);
 
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
+        // Basic clear
+        glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        float cameraSpeed = 300.0f; // pixels per second
-        float deltaTime = 0.016f;   // fixed step for now (we’ll improve this later)
+        /*
+            ============================================
+            Camera movement (WASD)
+            ============================================
+            For now we use a fixed delta time.
+            Later we’ll compute real deltaTime using glfwGetTime().
+        */
+        float cameraSpeed = 300.0f; // pixels/sec
+        float deltaTime = 0.016f;   // ~60 FPS
 
-        // Keyboard scrolling (WASD + arrows)
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
         {
             camera.Move({ 0.0f, -cameraSpeed * deltaTime });
         }
-
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
         {
             camera.Move({ 0.0f, cameraSpeed * deltaTime });
         }
-
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
         {
             camera.Move({ -cameraSpeed * deltaTime, 0.0f });
         }
-
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
             glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
         {
             camera.Move({ cameraSpeed * deltaTime, 0.0f });
         }
 
-        int fbW = 0, fbH = 0;
-        glfwGetFramebufferSize(window, &fbW, &fbH);
-        renderer.SetScreenSize(fbW, fbH);
+        /*
+            ============================================
+            Draw world
+            ============================================
+        */
+        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH });
 
-        // Draw tile map FIRST (background)
-        map.Draw(renderer, tileTex, camera, { fbW, fbH });
-
-
-        // Draw the same sprite at different positions to prove reusability
-        renderer.Draw(tex, { 100, 100 }, { 256, 256 }, camera);
-        renderer.Draw(tex, { 400, 150 }, { 128, 128 }, camera);
+        // Optional: draw a test sprite on top (shows layering)
+        renderer.Draw(testSprite.id, { 200.0f, 200.0f }, { 128.0f, 128.0f }, camera);
 
         glfwSwapBuffers(window);
     }

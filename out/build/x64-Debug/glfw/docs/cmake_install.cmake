@@ -1,8 +1,8 @@
-# Install script for directory: E:/MONClient/glfw/docs
+# Install script for directory: C:/MONClient/glfw/docs
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "E:/MONClient/out/install/x64-Debug")
+  set(CMAKE_INSTALL_PREFIX "C:/MONClient/out/install/x64-Debug")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -35,6 +35,6 @@ endif()
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "E:/MONClient/out/build/x64-Debug/glfw/docs/install_local_manifest.txt"
+  file(WRITE "C:/MONClient/out/build/x64-Debug/glfw/docs/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

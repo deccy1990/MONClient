@@ -1,7 +1,7 @@
-prefix=E:/MONClient/out/install/x64-Debug
+prefix=C:/MONClient/out/install/x64-Debug
 exec_prefix=${prefix}
-includedir=E:/MONClient/out/install/x64-Debug/include
-libdir=E:/MONClient/out/install/x64-Debug/lib
+includedir=C:/MONClient/out/install/x64-Debug/include
+libdir=C:/MONClient/out/install/x64-Debug/lib
 
 Name: GLFW
 Description: A multi-platform library for OpenGL, window and input

@@ -7,16 +7,13 @@
 SpriteRenderer::SpriteRenderer(GLuint shaderProgram, int screenWidth, int screenHeight)
     : mShaderProgram(shaderProgram), mScreenWidth(screenWidth), mScreenHeight(screenHeight)
 {
-    // Cache uniform locations once
     mProjectionLoc = glGetUniformLocation(mShaderProgram, "uProjection");
     mModelLoc = glGetUniformLocation(mShaderProgram, "uModel");
     mTextureLoc = glGetUniformLocation(mShaderProgram, "uTexture");
 
-    // Tell shader that uTexture uses texture unit 0
     glUseProgram(mShaderProgram);
     glUniform1i(mTextureLoc, 0);
 
-    // Create quad geometry buffers
     InitRenderData();
 }
 
@@ -38,20 +35,41 @@ void SpriteRenderer::Draw(GLuint texture,
     const glm::vec2& size,
     const Camera2D& camera)
 {
-    // Convert world position -> screen position using camera
+    // Default: draw the full texture
+    Draw(texture, worldPosition, size, camera, { 0.0f, 0.0f }, { 1.0f, 1.0f });
+}
+
+void SpriteRenderer::Draw(GLuint texture,
+    const glm::vec2& worldPosition,
+    const glm::vec2& size,
+    const Camera2D& camera,
+    const glm::vec2& uvMin,
+    const glm::vec2& uvMax)
+{
+    // Convert world -> screen
     glm::vec2 screenPos = worldPosition - camera.GetPosition();
 
-    // Orthographic projection: (0,0) top-left, (w,h) bottom-right
     glm::mat4 projection = glm::ortho(
         0.0f, (float)mScreenWidth,
         (float)mScreenHeight, 0.0f,
         -1.0f, 1.0f
     );
 
-    // Model matrix: translate then scale a unit quad
     glm::mat4 model(1.0f);
     model = glm::translate(model, glm::vec3(screenPos, 0.0f));
     model = glm::scale(model, glm::vec3(size, 1.0f));
+
+    // Update vertex data (positions are unit quad; UVs change per tile)
+    float verts[] = {
+        // x, y,   u, v
+        0.0f, 0.0f,  uvMin.x, uvMin.y,
+        1.0f, 0.0f,  uvMax.x, uvMin.y,
+        1.0f, 1.0f,  uvMax.x, uvMax.y,
+        0.0f, 1.0f,  uvMin.x, uvMax.y
+    };
+
+    glBindBuffer(GL_ARRAY_BUFFER, mVBO);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
 
     glUseProgram(mShaderProgram);
     glUniformMatrix4fv(mProjectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
@@ -67,12 +85,13 @@ void SpriteRenderer::Draw(GLuint texture,
 
 void SpriteRenderer::InitRenderData()
 {
+    // Initial vertex data (UVs will be overwritten per draw via glBufferSubData)
     float vertices[] = {
-        // aPos (x,y)   // aTex (u,v)
-         0.0f, 0.0f,     0.0f, 0.0f, // top-left
-         1.0f, 0.0f,     1.0f, 0.0f, // top-right
-         1.0f, 1.0f,     1.0f, 1.0f, // bottom-right
-         0.0f, 1.0f,     0.0f, 1.0f  // bottom-left
+        // x, y,   u, v
+        0.0f, 0.0f,  0.0f, 0.0f,
+        1.0f, 0.0f,  1.0f, 0.0f,
+        1.0f, 1.0f,  1.0f, 1.0f,
+        0.0f, 1.0f,  0.0f, 1.0f
     };
 
     unsigned int indices[] = { 0, 1, 2, 2, 3, 0 };
@@ -84,7 +103,7 @@ void SpriteRenderer::InitRenderData()
     glBindVertexArray(mVAO);
 
     glBindBuffer(GL_ARRAY_BUFFER, mVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_DYNAMIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);

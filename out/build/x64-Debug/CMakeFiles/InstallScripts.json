@@ -1,10 +1,10 @@
 {
 	"InstallScripts" : 
 	[
-		"E:/MONClient/out/build/x64-Debug/cmake_install.cmake",
-		"E:/MONClient/out/build/x64-Debug/glfw/cmake_install.cmake",
-		"E:/MONClient/out/build/x64-Debug/glfw/src/cmake_install.cmake",
-		"E:/MONClient/out/build/x64-Debug/glfw/docs/cmake_install.cmake"
+		"C:/MONClient/out/build/x64-Debug/cmake_install.cmake",
+		"C:/MONClient/out/build/x64-Debug/glfw/cmake_install.cmake",
+		"C:/MONClient/out/build/x64-Debug/glfw/src/cmake_install.cmake",
+		"C:/MONClient/out/build/x64-Debug/glfw/docs/cmake_install.cmake"
 	],
 	"Parallel" : false
 }
