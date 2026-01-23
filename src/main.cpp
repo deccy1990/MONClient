@@ -11,13 +11,10 @@
 #include "TileSet.h"
 #include "Player.h"
 #include <cmath>
-
-inline bool IsBlockedTile(int tileId)
-{
-    return tileId == 6;
-}
-
-
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 // stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
 #define STB_IMAGE_IMPLEMENTATION
@@ -183,12 +180,78 @@ static Texture2D LoadTextureRGBA(const char* path, bool flipY)
     return tex;
 }
 
+// Loads a CSV of integers into a flat vector (row-major).
+// Returns true on success and outputs width/height.
+static bool LoadCSVIntGrid(const std::string& path,
+    std::vector<int>& out,
+    int& outW,
+    int& outH)
+{
+    std::ifstream file(path);
+    if (!file.is_open())
+    {
+        std::cerr << "Failed to open CSV: " << path << "\n";
+        return false;
+    }
+
+    std::vector<int> values;
+    std::string line;
+
+    int width = -1;
+    int height = 0;
+
+    while (std::getline(file, line))
+    {
+        if (line.empty())
+            continue;
+
+        std::stringstream ss(line);
+        std::string cell;
+
+        int rowCount = 0;
+
+        while (std::getline(ss, cell, ','))
+        {
+            // Trim spaces (optional but helps with hand-edited CSVs)
+            while (!cell.empty() && (cell.back() == '\r' || cell.back() == ' ' || cell.back() == '\t'))
+                cell.pop_back();
+            size_t start = 0;
+            while (start < cell.size() && (cell[start] == ' ' || cell[start] == '\t'))
+                start++;
+
+            int v = std::stoi(cell.substr(start));
+            values.push_back(v);
+            rowCount++;
+        }
+
+        if (width == -1) width = rowCount;
+        else if (rowCount != width)
+        {
+            std::cerr << "CSV row width mismatch in " << path << "\n";
+            return false;
+        }
+
+        height++;
+    }
+
+    if (width <= 0 || height <= 0)
+    {
+        std::cerr << "CSV empty/invalid: " << path << "\n";
+        return false;
+    }
+
+    out = std::move(values);
+    outW = width;
+    outH = height;
+    return true;
+}
+
 int main()
 {
     /*
-        ============================================
-        GLFW + window
-        ============================================
+    ============================================
+    GLFW + window
+    ============================================
     */
     if (!glfwInit())
     {
@@ -212,9 +275,9 @@ int main()
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
 
     /*
-        ============================================
-        GLAD
-        ============================================
+    ============================================
+    GLAD
+    ============================================
     */
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
     {
@@ -226,17 +289,17 @@ int main()
     std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
 
     /*
-        ============================================
-        Global render state
-        ============================================
+    ============================================
+    Global render state
+    ============================================
     */
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     /*
-        ============================================
-        Shader program
-        ============================================
+    ============================================
+    Shader program
+    ============================================
     */
     GLuint shaderProgram = CreateProgram(vertexShaderSrc, fragmentShaderSrc);
     if (!shaderProgram)
@@ -246,14 +309,14 @@ int main()
     }
 
     /*
-        ============================================
-        Load textures (ONCE)
-        ============================================
-        Required files:
-          - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
-          - assets/test.png    (optional sprite test)
-		  - assets/player.png  (player sprite)
-		  - assets/collision.png (collision debug view)
+    ============================================
+    Load textures (ONCE)
+    ============================================
+    Required files:
+    - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
+    - assets/test.png    (optional sprite test)
+	- assets/player.png  (player sprite)
+	- assets/collision.png (collision debug view)
     */
     Texture2D atlas = LoadTextureRGBA("assets/tiles.png", true);
     if (!atlas.id)
@@ -262,10 +325,6 @@ int main()
         glfwTerminate();
         return -1;
     }
-
-    Texture2D collisionTex = LoadTextureRGBA("assets/collision.png", false);
-    if (!collisionTex.id) return -1;
-
 
     Texture2D playerTex = LoadTextureRGBA("assets/player.png", false);
     if (!playerTex.id)
@@ -278,9 +337,9 @@ int main()
 
 
     /*
-        ============================================
-        Create renderer + camera
-        ============================================
+    ============================================
+    Create renderer + camera
+    ============================================
     */
     int fbW = 0, fbH = 0;
     glfwGetFramebufferSize(window, &fbW, &fbH);
@@ -295,28 +354,58 @@ int main()
     player.SetGridPos({ 5.0f, 5.0f });
 
 
-    /*
-        ============================================
-        Create TileSet (atlas UV mapper) + TileMap
-        ============================================
-        Chosen tile size: 64x32
-    */
+   /*
+   ============================================
+   Create TileSet (atlas UV mapper) + TileMap
+   ============================================
+   Chosen tile size: 64x32
+   */
     const int tileW = 64;
     const int tileH = 32;
 
     TileSet tileset(atlas.width, atlas.height, tileW, tileH);
-
-    const int mapW = 100;
-    const int mapH = 100;
 
     //Atlas debug size
 
     std::cout << "atlas size: " << atlas.width << " x " << atlas.height << "\n";
 
 
-    //Quick “proof test” (optional, 30 seconds)
+    // ------------------------------------
+  // Load map from CSV (ground + collision)
+  // ------------------------------------
+    std::vector<int> ground;
+    std::vector<int> collision;
+
+    int csvW = 0, csvH = 0;
+    if (!LoadCSVIntGrid("assets/maps/ground.csv", ground, csvW, csvH))
+        return -1;
+
+    int colW = 0, colH = 0;
+    if (!LoadCSVIntGrid("assets/maps/collision.csv", collision, colW, colH))
+        return -1;
+
+    if (colW != csvW || colH != csvH)
+    {
+        std::cerr << "collision.csv size does not match ground.csv\n";
+        return -1;
+    }
+
+    const int mapW = csvW;
+    const int mapH = csvH;
 
     TileMap map(mapW, mapH, tileW, tileH);
+
+    // Fill visuals from ground layer
+    for (int y = 0; y < mapH; ++y)
+    {
+        for (int x = 0; x < mapW; ++x)
+        {
+            int id = ground[y * mapW + x];
+            map.SetTile(x, y, id);
+        }
+    }
+
+
 
     for (int i = 0; i < 8; ++i)
     {
@@ -324,34 +413,17 @@ int main()
         tileset.GetUV(i, a, b);
         std::cout << "tile " << i << " uvMin=(" << a.x << "," << a.y << ") uvMax=(" << b.x << "," << b.y << ")\n";
     }
-
-
-    // Fill the map with IDs 1..8 (0 reserved as "empty")
-    for (int y = 0; y < mapH; ++y)
-    {
-        for (int x = 0; x < mapW; ++x)
-        {
-            int id = (x + y) % 8;  // valid atlas ids: 0..7
-            map.SetTile(x, y, id);
-        }
-    }
-    // ------------------------------------
-// DEBUG collision wall (tile ID 6 = blocked)
-// ------------------------------------
-    for (int x = 10; x < 30; ++x)
-    {
-        map.SetTile(x, 15, 6);
-    }
+        
     // Confirm what ID is actually stored there
     std::cout << "Wall test tile id at (10,15) = " << map.GetTile(10, 15) << "\n";
 
 
 
-    /*
+        /*
        ============================================
        Main loop
        ============================================
-   */
+        */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
@@ -410,9 +482,9 @@ int main()
         // This gives smooth movement while keeping the logic tile-friendly (for collision later).
 
         // ------------------------------------
-// Isometric-correct input mapping
-// WASD represent SCREEN directions, then we convert to GRID movement.
-// ------------------------------------
+        // Isometric-correct input mapping
+        // WASD represent SCREEN directions, then we convert to GRID movement.
+        // ------------------------------------
         glm::vec2 screenDir(0.0f, 0.0f);
 
         // Screen space: +x right, +y down
@@ -473,16 +545,18 @@ int main()
         }
 
         // ------------------------------------
- // Collision settings (grid units)
- // ------------------------------------
- // Player hitbox in TILE units (tune later)
-        const glm::vec2 playerHalfExtents(0.25f, 0.20f);
+   // Collision settings (grid units)
+   // ------------------------------------
+   // Player hitbox in TILE units (tune later)
+        const glm::vec2 playerHalfExtents(0.18f, 0.12f);
 
-        // Which tile IDs are blocked?
-        auto IsBlockedTile = [](int id) -> bool
+        // 0 = walkable, 1 = blocked
+        auto IsBlockedAt = [&](int tx, int ty) -> bool
             {
-                return (id == 6); // stone wall tile
-                // If you want tile 7 solid too, use: return (id == 6 || id == 7);
+                if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH)
+                    return true; // outside map = solid
+
+                return collision[ty * mapW + tx] != 0;
             };
 
         // Checks if player AABB (in grid space) overlaps any blocked tiles
@@ -501,18 +575,14 @@ int main()
                     int tx = (int)std::floor(c.x);
                     int ty = (int)std::floor(c.y);
 
-                    int tid = map.GetTile(tx, ty);
-
-                    // Treat outside map as solid
-                    if (tid < 0)
-                        return true;
-
-                    if (IsBlockedTile(tid))
+                    if (IsBlockedAt(tx, ty))
                         return true;
                 }
 
                 return false;
             };
+
+
 
 
         // ------------------------------------
@@ -534,14 +604,12 @@ int main()
         if (!CollidesAt(tryY)) gp.y = tryY.y;
         else vel.y = 0.0f;
 
-        player.SetGridPos(gp);
-
-
-        // Clamp within map bounds (keep a small margin so you don’t go past edges)
+        // Clamp within map bounds
         gp.x = std::clamp(gp.x, 0.0f, (float)(mapW - 1));
         gp.y = std::clamp(gp.y, 0.0f, (float)(mapH - 1));
 
         player.SetGridPos(gp);
+
 
         // ------------------------------------
         // Camera follow with dead-zone + smoothing

@@ -17,6 +17,10 @@ class Camera2D;
 class Player
 {
 public:
+    // Pixel offset from the sprite bottom-center to where the "feet" are.
+    // Usually (0, 0) is fine if your sprite is tightly cropped, but we keep it configurable.
+    glm::vec2 feetPixelOffset{ 0.0f, 0.0f };
+
     Player(GLuint texture, const glm::ivec2& tilePos, const glm::vec2& sizePx)
         : mTexture(texture), mTilePos(tilePos), mSizePx(sizePx) {
     }
@@ -37,6 +41,13 @@ public:
         const glm::vec2& tileTopLeftWorldPos,
         int tileW,
         int tileH) const;
+    // Returns feet position in world space given a tile top-left (iso) and tile size.
+    // Useful for depth sorting and interaction.
+    glm::vec2 ComputeFeetWorld(const glm::vec2& tileTopLeftWorldPos, int tileW, int tileH) const
+    {
+        return tileTopLeftWorldPos + glm::vec2(tileW * 0.5f, (float)tileH);
+    }
+
 
 private:
     GLuint mTexture = 0;

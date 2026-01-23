@@ -45,8 +45,32 @@ void TileMap::Draw(SpriteRenderer& renderer,
     int playerSum = -1;
     if (player)
     {
-        playerSum = (int)std::floor(player->GetDepthKey());
+        // Convert player's grid pos -> iso world tile top-left (same as tiles)
+        const float halfW = mTileWidthPx * 0.5f;
+        const float halfH = mTileHeightPx * 0.5f;
+
+        glm::vec2 gp = player->GetGridPos();
+
+        float isoX = (gp.x - gp.y) * halfW;
+        float isoY = (gp.x + gp.y) * halfH;
+
+        glm::vec2 tileTopLeftWorld(isoX, isoY);
+
+        // Must match the same map origin used for tiles
+        glm::vec2 mapOrigin(viewportSizePx.x * 0.5f, 60.0f);
+        tileTopLeftWorld += mapOrigin;
+
+        // Feet world position (bottom-center of tile)
+        glm::vec2 feetWorld = tileTopLeftWorld + glm::vec2(mTileWidthPx * 0.5f, (float)mTileHeightPx);
+
+        // Convert feetWorld.y to a diagonal index:
+        // Each diagonal advances by halfH in world Y (because isoY = (x+y)*halfH).
+        playerSum = (int)std::floor((feetWorld.y - mapOrigin.y) / halfH);
     }
+
+    playerSum = std::clamp(playerSum, 0, (mWidth - 1) + (mHeight - 1));
+
+
 
     // NOTE: camera is top-left in world pixels.
     // We are currently not doing isometric-aware culling; we draw the full map.

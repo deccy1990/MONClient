@@ -15,9 +15,14 @@ void Player::DrawOnTile(SpriteRenderer& renderer,
     int tileW,
     int tileH) const
 {
-    glm::vec2 feetWorld = tileTopLeftWorldPos + glm::vec2(tileW * 0.5f, (float)tileH);
-    glm::vec2 playerTopLeft = feetWorld - glm::vec2(mSizePx.x * 0.5f, mSizePx.y);
+    // Feet position: center-bottom of tile
+    glm::vec2 feetWorld =
+        tileTopLeftWorldPos + glm::vec2(tileW * 0.5f, (float)tileH);
+
+    // Convert feet position to sprite top-left
+    glm::vec2 playerTopLeft;
+    playerTopLeft.x = feetWorld.x - (mSizePx.x * 0.5f) + feetPixelOffset.x;
+    playerTopLeft.y = feetWorld.y - mSizePx.y + feetPixelOffset.y;
 
     renderer.Draw(mTexture, playerTopLeft, mSizePx, camera);
 }
-
