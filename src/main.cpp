@@ -9,6 +9,8 @@
 #include "Camera2D.h"
 #include "TileMap.h"
 #include "TileSet.h"
+#include "Player.h"
+
 
 // stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
 #define STB_IMAGE_IMPLEMENTATION
@@ -130,40 +132,47 @@ static unsigned int CreateProgram(const char* vsSrc, const char* fsSrc)
     - Loads PNG/JPG into OpenGL
     - Returns Texture2D {id, width, height}
 */
-static Texture2D LoadTextureRGBA(const char* path)
+static Texture2D LoadTextureRGBA(const char* path, bool flipY)
 {
     Texture2D tex{};
 
-    // IMPORTANT:
-    // We flip vertically so the image loads in the expected orientation for OpenGL UVs.
-    // Our TileSet code compensates so tileId 0 is the top-left tile in the atlas.
-    stbi_set_flip_vertically_on_load(true);
+    // Control vertical flip per-texture
+    stbi_set_flip_vertically_on_load(flipY);
+
+    glGenTextures(1, &tex.id);
+    glBindTexture(GL_TEXTURE_2D, tex.id);
+
+    // Pixel-art friendly sampling
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     int channels = 0;
     unsigned char* data = stbi_load(path, &tex.width, &tex.height, &channels, 4);
     if (!data)
     {
-        std::cerr << "Failed to load texture '" << path << "': " << stbi_failure_reason() << "\n";
+        std::cerr << "Failed to load texture '" << path
+            << "': " << stbi_failure_reason() << "\n";
         tex.id = 0;
         return tex;
     }
 
-    glGenTextures(1, &tex.id);
-    glBindTexture(GL_TEXTURE_2D, tex.id);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_RGBA8,
+        tex.width,
+        tex.height,
+        0,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        data
+    );
 
-    // IMPORTANT for atlases: clamp so UVs don't wrap into other tiles
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    // Pixel-art friendly sampling
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
-
     stbi_image_free(data);
+
     return tex;
 }
 
@@ -237,21 +246,24 @@ int main()
           - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
           - assets/test.png    (optional sprite test)
     */
-    Texture2D atlas = LoadTextureRGBA("assets/tiles.png");
+    Texture2D atlas = LoadTextureRGBA("assets/tiles.png", true);
     if (!atlas.id)
     {
+        std::cerr << "Failed to load assets/tiles.png\n";
         glfwTerminate();
         return -1;
     }
 
-    Texture2D testSprite = LoadTextureRGBA("assets/test.png");
-    if (!testSprite.id)
+    Texture2D playerTex = LoadTextureRGBA("assets/player.png", false);
+    if (!playerTex.id)
     {
-        // Not fatal if you want — but we'll keep it strict for now
+        std::cerr << "Failed to load assets/player.png\n";
         glfwTerminate();
         return -1;
     }
 
+
+   
     /*
         ============================================
         Create renderer + camera
@@ -264,6 +276,9 @@ int main()
 
     // Camera position is world-space top-left of viewport
     Camera2D camera({ 0.0f, 0.0f });
+
+    // Create player (tile position 5,5 and sprite size 64x96)
+    Player player(playerTex.id, { 5, 5 }, { 64.0f, 96.0f });
 
     /*
         ============================================
@@ -324,46 +339,65 @@ int main()
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        /*
-            ============================================
-            Camera movement (WASD)
-            ============================================
-            For now we use a fixed delta time.
-            Later we’ll compute real deltaTime using glfwGetTime().
-        */
-        float cameraSpeed = 300.0f; // pixels/sec
-        float deltaTime = 0.016f;   // ~60 FPS
+        // --- Player movement (tile-based stepping) ---
+ // This version steps one tile per key press.
+ // Next upgrade: smooth movement + interpolation.
 
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS)
-        {
-            camera.Move({ 0.0f, -cameraSpeed * deltaTime });
-        }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS)
-        {
-            camera.Move({ 0.0f, cameraSpeed * deltaTime });
-        }
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
-        {
-            camera.Move({ -cameraSpeed * deltaTime, 0.0f });
-        }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
-            glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
-        {
-            camera.Move({ cameraSpeed * deltaTime, 0.0f });
-        }
+        static bool wasW = false, wasA = false, wasS = false, wasD = false;
+
+        bool w = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
+        bool a = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
+        bool s = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
+        bool d = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
+
+        glm::ivec2 p = player.GetTilePos();
+
+        if (w && !wasW) p.y -= 1;
+        if (s && !wasS) p.y += 1;
+        if (a && !wasA) p.x -= 1;
+        if (d && !wasD) p.x += 1;
+
+        // Clamp player within map bounds
+        p.x = std::max(0, std::min(mapW - 1, p.x));
+        p.y = std::max(0, std::min(mapH - 1, p.y));
+
+        player.SetTilePos(p);
+
+        wasW = w; wasA = a; wasS = s; wasD = d;
+
+        // --- Camera follow player (simple snap follow) ---
+        const float halfW = tileW * 0.5f;
+        const float halfH = tileH * 0.5f;
+
+        // Convert player tile -> iso world position (tile top-left)
+        float isoX = (float)(p.x - p.y) * halfW;
+        float isoY = (float)(p.x + p.y) * halfH;
+
+        // Match the same origin offset used in TileMap.cpp
+        glm::vec2 mapOrigin(
+            fbW * 0.5f,  // horizontal center of the screen
+            60.0f        // vertical offset (same as TileMap)
+        );
+
+        // Player tile top-left in world space
+        glm::vec2 playerTileTopLeft(isoX, isoY);
+        playerTileTopLeft += mapOrigin;
+
+        // Center camera on player
+        glm::vec2 camPos = playerTileTopLeft - glm::vec2(fbW * 0.5f, fbH * 0.5f);
+        camera.SetPosition(camPos);
+
+
 
         /*
             ============================================
             Draw world
             ============================================
         */
-        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH });
+        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player);
 
-        // Optional: draw a test sprite on top (shows layering)
-        renderer.Draw(testSprite.id, { 200.0f, 200.0f }, { 128.0f, 128.0f }, camera);
+
+        
 
         glfwSwapBuffers(window);
     }

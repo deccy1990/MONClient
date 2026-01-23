@@ -3,6 +3,8 @@
 #include "SpriteRenderer.h"
 #include "Camera2D.h"
 #include "TileSet.h"
+#include "Player.h"
+
 
 #include <algorithm> // std::clamp
 #include <cmath>     // std::floor
@@ -27,7 +29,7 @@ void TileMap::SetTile(int x, int y, int tileId)
 int TileMap::GetTile(int x, int y) const
 {
     if (x < 0 || x >= mWidth || y < 0 || y >= mHeight)
-        return 0;
+        return -1;
 
     return mTiles[Index(x, y)];
 }
@@ -36,53 +38,56 @@ void TileMap::Draw(SpriteRenderer& renderer,
     GLuint atlasTexture,
     const TileSet& tileset,
     const Camera2D& camera,
-    const glm::ivec2& viewportSizePx) const
+    const glm::ivec2& viewportSizePx,
+    const Player* player) const
 {
-    // --- Visible world rectangle (camera is top-left in world pixels)
-    const glm::vec2 camPos = camera.GetPosition();
+    // NOTE: camera is top-left in world pixels.
+    // We are currently not doing isometric-aware culling; we draw the full map.
+    // (We'll add culling later once everything else is stable.)
 
-    const float viewLeft = camPos.x;
-    const float viewTop = camPos.y;
-    const float viewRight = camPos.x + (float)viewportSizePx.x;
-    const float viewBottom = camPos.y + (float)viewportSizePx.y;
-
-    // --- Convert visible world pixels -> tile index range
-    int minTileX = (int)std::floor(viewLeft / (float)mTileWidthPx);
-    int minTileY = (int)std::floor(viewTop / (float)mTileHeightPx);
-    int maxTileX = (int)std::floor(viewRight / (float)mTileWidthPx);
-    int maxTileY = (int)std::floor(viewBottom / (float)mTileHeightPx);
-
-    // Small margin to avoid popping at edges
-    minTileX -= 1; minTileY -= 1;
-    maxTileX += 1; maxTileY += 1;
-
-    // Clamp to map bounds
-    minTileX = std::clamp(minTileX, 0, mWidth - 1);
-    minTileY = std::clamp(minTileY, 0, mHeight - 1);
-    maxTileX = std::clamp(maxTileX, 0, mWidth - 1);
-    maxTileY = std::clamp(maxTileY, 0, mHeight - 1);
-
-    // --- Draw visible tiles
-    for (int y = minTileY; y <= maxTileY; ++y)
+    // --- Draw tiles in isometric depth order (diagonals back -> front)
+    for (int sum = 0; sum <= (mWidth - 1) + (mHeight - 1); ++sum)
     {
-        for (int x = minTileX; x <= maxTileX; ++x)
-        {
-            int id = GetTile(x, y);
+        int xStart = std::max(0, sum - (mHeight - 1));
+        int xEnd = std::min(mWidth - 1, sum);
 
-            // Use -1 for "empty". Tile 0 is a valid atlas tile.
+        for (int x = xStart; x <= xEnd; ++x)
+        {
+            int y = sum - x;
+
+            int id = GetTile(x, y);
             if (id < 0)
                 continue;
 
-            // World position in pixels (top-left of tile)
-            glm::vec2 worldPos((float)(x * mTileWidthPx), (float)(y * mTileHeightPx));
+            const float halfW = mTileWidthPx * 0.5f;
+            const float halfH = mTileHeightPx * 0.5f;
+
+            // Grid -> isometric world position (tile top-left)
+            float isoX = (float)(x - y) * halfW;
+            float isoY = (float)(x + y) * halfH;
+
+            glm::vec2 worldPos(isoX, isoY);
+
+            // Map origin (must match main.cpp camera follow origin)
+            worldPos.x += viewportSizePx.x * 0.5f;
+            worldPos.y += 60.0f;
+
             glm::vec2 size((float)mTileWidthPx, (float)mTileHeightPx);
 
-            // NEW: get atlas UVs for this tile id
+            // UV lookup from atlas
             glm::vec2 uvMin, uvMax;
             tileset.GetUV(id, uvMin, uvMax);
 
-            // NEW: draw with atlas + UVs
+            // Draw tile
             renderer.Draw(atlasTexture, worldPos, size, camera, uvMin, uvMax);
+
+            // Draw player immediately after its tile (correct isometric depth)
+            if (player &&
+                player->GetTilePos().x == x &&
+                player->GetTilePos().y == y)
+            {
+                player->DrawOnTile(renderer, camera, worldPos, mTileWidthPx, mTileHeightPx);
+            }
         }
     }
 }

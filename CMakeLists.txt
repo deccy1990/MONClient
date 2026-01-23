@@ -13,6 +13,7 @@ add_executable(MONClient
     src/SpriteRenderer.cpp
     src/TileMap.cpp
     src/TileSet.cpp
+    src/Player.cpp
 )
 
 

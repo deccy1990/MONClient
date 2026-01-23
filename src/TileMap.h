@@ -7,6 +7,7 @@
 class SpriteRenderer;
 class Camera2D;
 class TileSet;
+class Player;
 
 /*
     TileMap
@@ -31,7 +32,9 @@ public:
         GLuint atlasTexture,
         const TileSet& tileset,
         const Camera2D& camera,
-        const glm::ivec2& viewportSizePx) const;
+        const glm::ivec2& viewportSizePx,
+        const class Player* player) const;
+
 
 private:
     int Index(int x, int y) const { return y * mWidth + x; }
