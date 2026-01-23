@@ -34,6 +34,7 @@ int TileMap::GetTile(int x, int y) const
     return mTiles[Index(x, y)];
 }
 
+
 void TileMap::Draw(SpriteRenderer& renderer,
     GLuint atlasTexture,
     const TileSet& tileset,
@@ -41,6 +42,12 @@ void TileMap::Draw(SpriteRenderer& renderer,
     const glm::ivec2& viewportSizePx,
     const Player* player) const
 {
+    int playerSum = -1;
+    if (player)
+    {
+        playerSum = (int)std::floor(player->GetDepthKey());
+    }
+
     // NOTE: camera is top-left in world pixels.
     // We are currently not doing isometric-aware culling; we draw the full map.
     // (We'll add culling later once everything else is stable.)
@@ -61,6 +68,25 @@ void TileMap::Draw(SpriteRenderer& renderer,
 
             const float halfW = mTileWidthPx * 0.5f;
             const float halfH = mTileHeightPx * 0.5f;
+
+            // Draw player after finishing this diagonal (correct iso depth)
+            if (player && sum == playerSum)
+            {
+                const float halfW = mTileWidthPx * 0.5f;
+                const float halfH = mTileHeightPx * 0.5f;
+
+                glm::vec2 gp = player->GetGridPos();
+
+                float isoX = (gp.x - gp.y) * halfW;
+                float isoY = (gp.x + gp.y) * halfH;
+
+                glm::vec2 tileTopLeftWorld(isoX, isoY);
+                tileTopLeftWorld.x += viewportSizePx.x * 0.5f;
+                tileTopLeftWorld.y += 60.0f;
+
+                player->DrawOnTile(renderer, camera, tileTopLeftWorld, mTileWidthPx, mTileHeightPx);
+            }
+
 
             // Grid -> isometric world position (tile top-left)
             float isoX = (float)(x - y) * halfW;

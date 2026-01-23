@@ -2,6 +2,8 @@
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 
+#include <cmath>
+
 class SpriteRenderer;
 class Camera2D;
 
@@ -18,8 +20,15 @@ public:
     Player(GLuint texture, const glm::ivec2& tilePos, const glm::vec2& sizePx)
         : mTexture(texture), mTilePos(tilePos), mSizePx(sizePx) {
     }
+    // Smooth position in tile-grid space (float). Example: (5.2, 5.0)
+    const glm::vec2& GetGridPos() const { return mGridPos; }
+    void SetGridPos(const glm::vec2& gp) { mGridPos = gp; }
 
-    const glm::ivec2& GetTilePos() const { return mTilePos; }
+    // Depth key for isometric sorting (larger = drawn later / in front)
+    float GetDepthKey() const { return mGridPos.x + mGridPos.y; }
+
+
+    glm::ivec2 GetTilePos() const { return glm::ivec2((int)std::round(mGridPos.x), (int)std::round(mGridPos.y)); }
     void SetTilePos(const glm::ivec2& p) { mTilePos = p; }
 
     // Draw player using the already-computed world position of the tile (top-left of the tile sprite)
@@ -33,4 +42,6 @@ private:
     GLuint mTexture = 0;
     glm::ivec2 mTilePos{ 0, 0 };
     glm::vec2 mSizePx{ 64.0f, 96.0f }; // typical sprite size (taller than tile)
+    glm::vec2 mGridPos{ 0.0f, 0.0f };
+
 };

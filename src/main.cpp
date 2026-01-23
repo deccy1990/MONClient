@@ -10,6 +10,13 @@
 #include "TileMap.h"
 #include "TileSet.h"
 #include "Player.h"
+#include <cmath>
+
+inline bool IsBlockedTile(int tileId)
+{
+    return tileId == 6;
+}
+
 
 
 // stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
@@ -245,6 +252,8 @@ int main()
         Required files:
           - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
           - assets/test.png    (optional sprite test)
+		  - assets/player.png  (player sprite)
+		  - assets/collision.png (collision debug view)
     */
     Texture2D atlas = LoadTextureRGBA("assets/tiles.png", true);
     if (!atlas.id)
@@ -253,6 +262,10 @@ int main()
         glfwTerminate();
         return -1;
     }
+
+    Texture2D collisionTex = LoadTextureRGBA("assets/collision.png", false);
+    if (!collisionTex.id) return -1;
+
 
     Texture2D playerTex = LoadTextureRGBA("assets/player.png", false);
     if (!playerTex.id)
@@ -263,7 +276,7 @@ int main()
     }
 
 
-   
+
     /*
         ============================================
         Create renderer + camera
@@ -279,6 +292,8 @@ int main()
 
     // Create player (tile position 5,5 and sprite size 64x96)
     Player player(playerTex.id, { 5, 5 }, { 64.0f, 96.0f });
+    player.SetGridPos({ 5.0f, 5.0f });
+
 
     /*
         ============================================
@@ -320,84 +335,267 @@ int main()
             map.SetTile(x, y, id);
         }
     }
+    // ------------------------------------
+// DEBUG collision wall (tile ID 6 = blocked)
+// ------------------------------------
+    for (int x = 10; x < 30; ++x)
+    {
+        map.SetTile(x, 15, 6);
+    }
+    // Confirm what ID is actually stored there
+    std::cout << "Wall test tile id at (10,15) = " << map.GetTile(10, 15) << "\n";
+
 
 
     /*
-        ============================================
-        Main loop
-        ============================================
-    */
+       ============================================
+       Main loop
+       ============================================
+   */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
-        // Update framebuffer size (needed for projection + culling)
+        // ------------------------------------
+        // Run toggle (Ctrl) - toggles runEnabled on/off
+        // ------------------------------------
+        static bool runEnabled = false;
+        static bool wasCtrlDown = false;
+
+        bool ctrlDown =
+            (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
+            (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
+
+        if (ctrlDown && !wasCtrlDown)
+            runEnabled = !runEnabled;
+
+        wasCtrlDown = ctrlDown;
+
+        // ------------------------------------
+        // deltaTime (real)
+        // ------------------------------------
+        static double lastTime = glfwGetTime();
+        double now = glfwGetTime();
+        float deltaTime = (float)(now - lastTime);
+        lastTime = now;
+
+        // Safety clamp (avoid huge jumps after breakpoints/tab-out)
+        if (deltaTime > 0.05f) deltaTime = 0.05f;
+
+        // ------------------------------------
+        // Update framebuffer size (projection depends on it)
+        // ------------------------------------
         glfwGetFramebufferSize(window, &fbW, &fbH);
         renderer.SetScreenSize(fbW, fbH);
 
-        // Basic clear
+        // ------------------------------------
+        // Clear
+        // ------------------------------------
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // --- Player movement (tile-based stepping) ---
- // This version steps one tile per key press.
- // Next upgrade: smooth movement + interpolation.
+        // ------------------------------------
+        // Movement speed (stored for later smooth movement + stamina)
+        // NOTE: tile-step movement doesn’t use moveSpeed yet; we will in the next step.
+        // ------------------------------------
+        float walkSpeed = 120.0f;
+        float runSpeed = 200.0f;
+        float moveSpeed = runEnabled ? runSpeed : walkSpeed;
+        (void)moveSpeed; // suppress unused warning for now
 
-        static bool wasW = false, wasA = false, wasS = false, wasD = false;
+        // ------------------------------------
+        // Smooth player movement (hold WASD)
+        // ------------------------------------
+        // We move in *grid space* (tile coordinates as floats), then convert to iso for rendering.
+        // This gives smooth movement while keeping the logic tile-friendly (for collision later).
 
-        bool w = glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS;
-        bool a = glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS;
-        bool s = glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS;
-        bool d = glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS;
+        // ------------------------------------
+// Isometric-correct input mapping
+// WASD represent SCREEN directions, then we convert to GRID movement.
+// ------------------------------------
+        glm::vec2 screenDir(0.0f, 0.0f);
 
-        glm::ivec2 p = player.GetTilePos();
+        // Screen space: +x right, +y down
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) screenDir.y -= 1.0f;
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) screenDir.y += 1.0f;
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
-        if (w && !wasW) p.y -= 1;
-        if (s && !wasS) p.y += 1;
-        if (a && !wasA) p.x -= 1;
-        if (d && !wasD) p.x += 1;
+        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
+            screenDir = glm::normalize(screenDir);
 
-        // Clamp player within map bounds
-        p.x = std::max(0, std::min(mapW - 1, p.x));
-        p.y = std::max(0, std::min(mapH - 1, p.y));
+        // Convert screen direction -> grid direction using iso basis vectors:
+        // screenRight = (+1, -1) in grid
+        // screenDown  = (+1, +1) in grid
+        glm::vec2 gridDir = screenDir.x * glm::vec2(1.0f, -1.0f) +
+            screenDir.y * glm::vec2(1.0f, 1.0f);
 
-        player.SetTilePos(p);
+        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
+            gridDir = glm::normalize(gridDir);
 
-        wasW = w; wasA = a; wasS = s; wasD = d;
 
-        // --- Camera follow player (simple snap follow) ---
+        // Normalize so diagonal isn’t faster
+        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
+            gridDir = glm::normalize(gridDir);
+
+        // Speed in tiles per second (tune to taste)
+        float walkTilesPerSec = 3.0f;
+        float runTilesPerSec = 5.0f;
+        float maxSpeed = runEnabled ? runTilesPerSec : walkTilesPerSec;
+
+        // Acceleration/deceleration in tiles/sec^2
+        float accel = 18.0f;
+        float decel = 22.0f;
+
+        // Persistent velocity (grid units / second)
+        static glm::vec2 vel(0.0f, 0.0f);
+
+        // Apply acceleration or deceleration
+        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
+        {
+            vel += gridDir * accel * deltaTime;
+
+            // Clamp to max speed
+            float speed = glm::length(vel);
+            if (speed > maxSpeed)
+                vel = (vel / speed) * maxSpeed;
+        }
+        else
+        {
+            // Decelerate toward zero when no input
+            float speed = glm::length(vel);
+            if (speed > 0.0f)
+            {
+                float drop = decel * deltaTime;
+                float newSpeed = std::max(0.0f, speed - drop);
+                vel = (speed > 0.0f) ? (vel / speed) * newSpeed : glm::vec2(0.0f);
+            }
+        }
+
+        // ------------------------------------
+ // Collision settings (grid units)
+ // ------------------------------------
+ // Player hitbox in TILE units (tune later)
+        const glm::vec2 playerHalfExtents(0.25f, 0.20f);
+
+        // Which tile IDs are blocked?
+        auto IsBlockedTile = [](int id) -> bool
+            {
+                return (id == 6); // stone wall tile
+                // If you want tile 7 solid too, use: return (id == 6 || id == 7);
+            };
+
+        // Checks if player AABB (in grid space) overlaps any blocked tiles
+        auto CollidesAt = [&](const glm::vec2& pos) -> bool
+            {
+                glm::vec2 corners[4] =
+                {
+                    { pos.x - playerHalfExtents.x, pos.y - playerHalfExtents.y },
+                    { pos.x + playerHalfExtents.x, pos.y - playerHalfExtents.y },
+                    { pos.x - playerHalfExtents.x, pos.y + playerHalfExtents.y },
+                    { pos.x + playerHalfExtents.x, pos.y + playerHalfExtents.y }
+                };
+
+                for (const glm::vec2& c : corners)
+                {
+                    int tx = (int)std::floor(c.x);
+                    int ty = (int)std::floor(c.y);
+
+                    int tid = map.GetTile(tx, ty);
+
+                    // Treat outside map as solid
+                    if (tid < 0)
+                        return true;
+
+                    if (IsBlockedTile(tid))
+                        return true;
+                }
+
+                return false;
+            };
+
+
+        // ------------------------------------
+        // Integrate movement with hitbox collision (slide along walls)
+        // ------------------------------------
+        glm::vec2 gp = player.GetGridPos();
+
+        // X
+        glm::vec2 tryX = gp;
+        tryX.x += vel.x * deltaTime;
+
+        if (!CollidesAt(tryX)) gp.x = tryX.x;
+        else vel.x = 0.0f;
+
+        // Y
+        glm::vec2 tryY = gp;
+        tryY.y += vel.y * deltaTime;
+
+        if (!CollidesAt(tryY)) gp.y = tryY.y;
+        else vel.y = 0.0f;
+
+        player.SetGridPos(gp);
+
+
+        // Clamp within map bounds (keep a small margin so you don’t go past edges)
+        gp.x = std::clamp(gp.x, 0.0f, (float)(mapW - 1));
+        gp.y = std::clamp(gp.y, 0.0f, (float)(mapH - 1));
+
+        player.SetGridPos(gp);
+
+        // ------------------------------------
+        // Camera follow with dead-zone + smoothing
+        // ------------------------------------
         const float halfW = tileW * 0.5f;
         const float halfH = tileH * 0.5f;
 
-        // Convert player tile -> iso world position (tile top-left)
-        float isoX = (float)(p.x - p.y) * halfW;
-        float isoY = (float)(p.x + p.y) * halfH;
+        // Player iso tile top-left (world)
+        float isoX = (gp.x - gp.y) * halfW;
+        float isoY = (gp.x + gp.y) * halfH;
 
-        // Match the same origin offset used in TileMap.cpp
-        glm::vec2 mapOrigin(
-            fbW * 0.5f,  // horizontal center of the screen
-            60.0f        // vertical offset (same as TileMap)
-        );
+        // Must match TileMap.cpp origin
+        glm::vec2 mapOrigin(fbW * 0.5f, 60.0f);
 
-        // Player tile top-left in world space
-        glm::vec2 playerTileTopLeft(isoX, isoY);
-        playerTileTopLeft += mapOrigin;
+        // Tile top-left world pos for the player (same convention as tiles)
+        glm::vec2 playerTileTopLeft = glm::vec2(isoX, isoY) + mapOrigin;
 
-        // Center camera on player
-        glm::vec2 camPos = playerTileTopLeft - glm::vec2(fbW * 0.5f, fbH * 0.5f);
+        // "Feet" point is best for camera focus (bottom-center of tile)
+        glm::vec2 playerWorldFeet = playerTileTopLeft + glm::vec2(tileW * 0.5f, (float)tileH);
+
+        // Current camera center in world coords
+        glm::vec2 camPos = camera.GetPosition();
+        glm::vec2 halfView((float)fbW * 0.5f, (float)fbH * 0.5f);
+        glm::vec2 camCenter = camPos + halfView;
+
+        // Dead-zone size (tune these)
+        // Larger = camera moves less often
+        glm::vec2 deadZoneHalf(80.0f, 60.0f);
+
+        // Keep camera center unless player exits the dead-zone rectangle
+        glm::vec2 desiredCenter = camCenter;
+        glm::vec2 delta = playerWorldFeet - camCenter;
+
+        if (delta.x > deadZoneHalf.x) desiredCenter.x = playerWorldFeet.x - deadZoneHalf.x;
+        if (delta.x < -deadZoneHalf.x) desiredCenter.x = playerWorldFeet.x + deadZoneHalf.x;
+
+        if (delta.y > deadZoneHalf.y) desiredCenter.y = playerWorldFeet.y - deadZoneHalf.y;
+        if (delta.y < -deadZoneHalf.y) desiredCenter.y = playerWorldFeet.y + deadZoneHalf.y;
+
+        // Desired camera top-left from desired center
+        glm::vec2 targetCamPos = desiredCenter - halfView;
+
+        // Smooth camera follow (frame-rate independent)
+        const float cameraFollowStrength = 10.0f; // slightly lower feels nicer with dead-zone
+        float t = 1.0f - std::exp(-cameraFollowStrength * deltaTime);
+
+        camPos = camPos + (targetCamPos - camPos) * t;
         camera.SetPosition(camPos);
 
 
-
-        /*
-            ============================================
-            Draw world
-            ============================================
-        */
+        // ------------------------------------
+        // Draw world
+        // ------------------------------------
         map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player);
-
-
-        
 
         glfwSwapBuffers(window);
     }
