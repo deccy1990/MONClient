@@ -14,10 +14,13 @@ add_executable(MONClient
     src/TileMap.cpp
     src/TileSet.cpp
     src/Player.cpp
+    third_party/tinyxml2/tinyxml2.cpp
 )
 
 
 target_include_directories(MONClient PRIVATE glm)
+target_include_directories(MONClient PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(MONClient PRIVATE ${CMAKE_SOURCE_DIR}/third_party/tinyxml2)
 
 target_link_libraries(MONClient glfw glad)
 

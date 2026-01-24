@@ -1,7 +1,7 @@
 #include "TileMap.h"
 
 #include "SpriteRenderer.h"
-#include "Camera2D.h"
+#include "Camera2d.h"
 #include "TileSet.h"
 #include "Player.h"
 
