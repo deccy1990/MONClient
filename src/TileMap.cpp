@@ -1,51 +1,54 @@
 #include "TileMap.h"
 
-#include "SpriteRenderer.h"
 #include "Camera2d.h"
-#include "TileSet.h"
 #include "Player.h"
+#include "SpriteRenderer.h"
+#include "TileSet.h"
 
-
-#include <algorithm> // std::clamp
-#include <cmath>     // std::floor
+#include <algorithm>
+#include <cmath>
 
 TileMap::TileMap(int width, int height, int tileWidthPx, int tileHeightPx)
-    : mWidth(width),
-    mHeight(height),
-    mTileWidthPx(tileWidthPx),
-    mTileHeightPx(tileHeightPx),
-    mTiles(width* height, -1)
+    : mWidth(width)
+    , mHeight(height)
+    , mTileWidthPx(tileWidthPx)
+    , mTileHeightPx(tileHeightPx)
 {
 }
 
-void TileMap::SetTile(int x, int y, int tileId)
+void TileMap::AddLayer(const std::string& name, const std::vector<int>& tiles, bool visible, bool renderable)
 {
-    if (x < 0 || x >= mWidth || y < 0 || y >= mHeight)
+    if ((int)tiles.size() != mWidth * mHeight)
         return;
 
-    mTiles[Index(x, y)] = tileId;
+    TileLayer layer{};
+    layer.name = name;
+    layer.tiles = tiles;
+    layer.visible = visible;
+    layer.renderable = renderable;
+
+    mLayers.push_back(std::move(layer));
 }
 
-int TileMap::GetTile(int x, int y) const
+int TileMap::GetLayerTile(const TileLayer& layer, int x, int y) const
 {
     if (x < 0 || x >= mWidth || y < 0 || y >= mHeight)
         return -1;
 
-    return mTiles[Index(x, y)];
+    return layer.tiles[Index(x, y)];
 }
-
 
 void TileMap::Draw(SpriteRenderer& renderer,
     GLuint atlasTexture,
     const TileSet& tileset,
     const Camera2D& camera,
     const glm::ivec2& viewportSizePx,
-    const Player* player) const
+    const Player* player,
+    float animationTimeMs) const
 {
     int playerSum = -1;
     if (player)
     {
-        // Convert player's grid pos -> iso world tile top-left (same as tiles)
         const float halfW = mTileWidthPx * 0.5f;
         const float halfH = mTileHeightPx * 0.5f;
 
@@ -56,27 +59,15 @@ void TileMap::Draw(SpriteRenderer& renderer,
 
         glm::vec2 tileTopLeftWorld(isoX, isoY);
 
-        // Must match the same map origin used for tiles
         glm::vec2 mapOrigin(viewportSizePx.x * 0.5f, 60.0f);
         tileTopLeftWorld += mapOrigin;
 
-        // Feet world position (bottom-center of tile)
         glm::vec2 feetWorld = tileTopLeftWorld + glm::vec2(mTileWidthPx * 0.5f, (float)mTileHeightPx);
-
-        // Convert feetWorld.y to a diagonal index:
-        // Each diagonal advances by halfH in world Y (because isoY = (x+y)*halfH).
         playerSum = (int)std::floor((feetWorld.y - mapOrigin.y) / halfH);
     }
 
     playerSum = std::clamp(playerSum, 0, (mWidth - 1) + (mHeight - 1));
 
-
-
-    // NOTE: camera is top-left in world pixels.
-    // We are currently not doing isometric-aware culling; we draw the full map.
-    // (We'll add culling later once everything else is stable.)
-
-    // --- Draw tiles in isometric depth order (diagonals back -> front)
     for (int sum = 0; sum <= (mWidth - 1) + (mHeight - 1); ++sum)
     {
         int xStart = std::max(0, sum - (mHeight - 1));
@@ -86,19 +77,11 @@ void TileMap::Draw(SpriteRenderer& renderer,
         {
             int y = sum - x;
 
-            int id = GetTile(x, y);
-            if (id < 0)
-                continue;
-
             const float halfW = mTileWidthPx * 0.5f;
             const float halfH = mTileHeightPx * 0.5f;
 
-            // Draw player after finishing this diagonal (correct iso depth)
             if (player && sum == playerSum)
             {
-                const float halfW = mTileWidthPx * 0.5f;
-                const float halfH = mTileHeightPx * 0.5f;
-
                 glm::vec2 gp = player->GetGridPos();
 
                 float isoX = (gp.x - gp.y) * halfW;
@@ -111,27 +94,32 @@ void TileMap::Draw(SpriteRenderer& renderer,
                 player->DrawOnTile(renderer, camera, tileTopLeftWorld, mTileWidthPx, mTileHeightPx);
             }
 
-
-            // Grid -> isometric world position (tile top-left)
             float isoX = (float)(x - y) * halfW;
             float isoY = (float)(x + y) * halfH;
 
             glm::vec2 worldPos(isoX, isoY);
-
-            // Map origin (must match main.cpp camera follow origin)
             worldPos.x += viewportSizePx.x * 0.5f;
             worldPos.y += 60.0f;
 
             glm::vec2 size((float)mTileWidthPx, (float)mTileHeightPx);
 
-            // UV lookup from atlas
-            glm::vec2 uvMin, uvMax;
-            tileset.GetUV(id, uvMin, uvMax);
+            for (const TileLayer& layer : mLayers)
+            {
+                if (!layer.visible || !layer.renderable)
+                    continue;
 
-            // Draw tile
-            renderer.Draw(atlasTexture, worldPos, size, camera, uvMin, uvMax);
+                int id = GetLayerTile(layer, x, y);
+                if (id < 0)
+                    continue;
 
-            // Draw player immediately after its tile (correct isometric depth)
+                const int resolvedId = tileset.ResolveTileId(id, animationTimeMs);
+
+                glm::vec2 uvMin, uvMax;
+                tileset.GetUV(resolvedId, uvMin, uvMax);
+
+                renderer.Draw(atlasTexture, worldPos, size, camera, uvMin, uvMax);
+            }
+
             if (player &&
                 player->GetTilePos().x == x &&
                 player->GetTilePos().y == y)
