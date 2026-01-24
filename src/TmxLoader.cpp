@@ -109,19 +109,99 @@ namespace
         return value;
     }
 
-    int GidToLocal(uint32_t gid, int firstGid, int atlasTileCount)
+    bool LoadTilesetFromTsx(const std::filesystem::path& tsxPath,
+        int firstGid,
+        int fallbackTileW,
+        int fallbackTileH,
+        TilesetDef& outDef)
     {
-        if (gid == 0)
-            return -1;
+        using namespace tinyxml2;
 
-        const int localId = static_cast<int>(gid) - firstGid;
-        if (localId < 0)
-            return -1;
+        XMLDocument tsxDoc;
+        const XMLError tsxErr = tsxDoc.LoadFile(tsxPath.string().c_str());
+        if (tsxErr != XML_SUCCESS)
+        {
+            std::cerr << "Failed to load TSX: " << tsxPath << " error=" << tsxDoc.ErrorStr() << "\n";
+            return false;
+        }
 
-        if (atlasTileCount > 0 && localId >= atlasTileCount)
-            return -1;
+        XMLElement* tsxTileset = tsxDoc.FirstChildElement("tileset");
+        if (!tsxTileset)
+        {
+            std::cerr << "TSX missing <tileset> root element\n";
+            return false;
+        }
 
-        return localId;
+        outDef = TilesetDef{};
+        outDef.firstGid = firstGid;
+        outDef.tileW = tsxTileset->IntAttribute("tilewidth", fallbackTileW);
+        outDef.tileH = tsxTileset->IntAttribute("tileheight", fallbackTileH);
+        outDef.columns = tsxTileset->IntAttribute("columns", 0);
+        outDef.tileCount = tsxTileset->IntAttribute("tilecount", 0);
+
+        XMLElement* image = tsxTileset->FirstChildElement("image");
+        if (!image)
+        {
+            std::cerr << "TSX missing <image> element\n";
+            return false;
+        }
+
+        const char* imageSource = image->Attribute("source");
+        if (!imageSource)
+        {
+            std::cerr << "TSX image missing source attribute\n";
+            return false;
+        }
+
+        outDef.imageW = image->IntAttribute("width", 0);
+        outDef.imageH = image->IntAttribute("height", 0);
+
+        const std::filesystem::path tsxDir = tsxPath.parent_path();
+        outDef.imagePath = (tsxDir / imageSource).lexically_normal().string();
+
+        if (outDef.tileCount <= 0)
+        {
+            int rows = 0;
+            if (outDef.columns > 0 && outDef.tileW > 0 && outDef.tileH > 0)
+            {
+                if (outDef.imageW > 0 && outDef.imageH > 0)
+                    rows = (outDef.imageH / outDef.tileH);
+            }
+
+            if (outDef.columns > 0 && rows > 0)
+                outDef.tileCount = outDef.columns * rows;
+        }
+
+        for (XMLElement* tile = tsxTileset->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
+        {
+            const int tileId = tile->IntAttribute("id", -1);
+            if (tileId < 0)
+                continue;
+
+            XMLElement* animation = tile->FirstChildElement("animation");
+            if (!animation)
+                continue;
+
+            TileAnimation anim{};
+
+            for (XMLElement* frame = animation->FirstChildElement("frame"); frame; frame = frame->NextSiblingElement("frame"))
+            {
+                AnimationFrame animFrame{};
+                animFrame.tileId = frame->IntAttribute("tileid", tileId);
+                animFrame.durationMs = frame->IntAttribute("duration", 0);
+
+                if (animFrame.durationMs <= 0)
+                    animFrame.durationMs = 100;
+
+                anim.totalDurationMs += animFrame.durationMs;
+                anim.frames.push_back(animFrame);
+            }
+
+            if (!anim.frames.empty() && anim.totalDurationMs > 0)
+                outDef.animations[tileId] = anim;
+        }
+
+        return true;
     }
 }
 
@@ -166,164 +246,81 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
         return false;
     }
 
-    outMap.width = map->IntAttribute("width");
-    outMap.height = map->IntAttribute("height");
-    outMap.tileWidth = map->IntAttribute("tilewidth");
-    outMap.tileHeight = map->IntAttribute("tileheight");
+    MapData& mapData = outMap.mapData;
+    mapData.width = map->IntAttribute("width");
+    mapData.height = map->IntAttribute("height");
+    mapData.tileW = map->IntAttribute("tilewidth");
+    mapData.tileH = map->IntAttribute("tileheight");
 
-    const int expectedCount = outMap.width * outMap.height;
+    const int expectedCount = mapData.width * mapData.height;
 
     const std::filesystem::path tmxFsPath(tmxPath);
     const std::filesystem::path tmxDir = tmxFsPath.parent_path();
 
-    // --- Tileset and TSX animations
-    XMLElement* tileset = map->FirstChildElement("tileset");
-    if (!tileset)
+    // --- Tilesets (.tsx)
+    for (XMLElement* tileset = map->FirstChildElement("tileset"); tileset; tileset = tileset->NextSiblingElement("tileset"))
+    {
+        const int firstGid = tileset->IntAttribute("firstgid", 1);
+        const char* tsxSource = tileset->Attribute("source");
+        if (!tsxSource)
+        {
+            std::cerr << "Tileset is expected to be external (.tsx) but no source was provided\n";
+            return false;
+        }
+
+        const std::filesystem::path tsxPath = (tmxDir / tsxSource).lexically_normal();
+        TilesetDef tilesetDef{};
+        if (!LoadTilesetFromTsx(tsxPath, firstGid, mapData.tileW, mapData.tileH, tilesetDef))
+            return false;
+
+        mapData.tilesets.push_back(std::move(tilesetDef));
+    }
+
+    if (mapData.tilesets.empty())
     {
         std::cerr << "TMX missing <tileset> element\n";
         return false;
     }
 
-    outMap.firstGid = tileset->IntAttribute("firstgid", 1);
-
-    const char* tsxSource = tileset->Attribute("source");
-    if (!tsxSource)
-    {
-        std::cerr << "Tileset is expected to be external (.tsx) but no source was provided\n";
-        return false;
-    }
-
-    const std::filesystem::path tsxPath = (tmxDir / tsxSource).lexically_normal();
-
-    XMLDocument tsxDoc;
-    const XMLError tsxErr = tsxDoc.LoadFile(tsxPath.string().c_str());
-    if (tsxErr != XML_SUCCESS)
-    {
-        std::cerr << "Failed to load TSX: " << tsxPath << " error=" << tsxDoc.ErrorStr() << "\n";
-        return false;
-    }
-
-    XMLElement* tsxTileset = tsxDoc.FirstChildElement("tileset");
-    if (!tsxTileset)
-    {
-        std::cerr << "TSX missing <tileset> root element\n";
-        return false;
-    }
-
-    outMap.atlasTileCount = tsxTileset->IntAttribute("tilecount", 0);
-    if (outMap.atlasTileCount <= 0)
-    {
-        const int columns = tsxTileset->IntAttribute("columns", 0);
-        const int tileWidth = tsxTileset->IntAttribute("tilewidth", outMap.tileWidth);
-        const int tileHeight = tsxTileset->IntAttribute("tileheight", outMap.tileHeight);
-
-        int rows = 0;
-        if (columns > 0 && tileWidth > 0 && tileHeight > 0)
-        {
-            const int imageWidth = tsxTileset->FirstChildElement("image")
-                ? tsxTileset->FirstChildElement("image")->IntAttribute("width", 0)
-                : 0;
-            const int imageHeight = tsxTileset->FirstChildElement("image")
-                ? tsxTileset->FirstChildElement("image")->IntAttribute("height", 0)
-                : 0;
-
-            if (imageWidth > 0 && imageHeight > 0)
-                rows = (imageHeight / tileHeight);
-        }
-
-        if (columns > 0 && rows > 0)
-            outMap.atlasTileCount = columns * rows;
-    }
-
-    XMLElement* image = tsxTileset->FirstChildElement("image");
-    if (!image)
-    {
-        std::cerr << "TSX missing <image> element\n";
-        return false;
-    }
-
-    const char* imageSource = image->Attribute("source");
-    if (!imageSource)
-    {
-        std::cerr << "TSX image missing source attribute\n";
-        return false;
-    }
-
-    const std::filesystem::path tsxDir = tsxPath.parent_path();
-    outMap.tilesetImagePath = (tsxDir / imageSource).lexically_normal().string();
-
-    for (XMLElement* tile = tsxTileset->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
-    {
-        const int tileId = tile->IntAttribute("id", -1);
-        if (tileId < 0)
-            continue;
-
-        XMLElement* animation = tile->FirstChildElement("animation");
-        if (!animation)
-            continue;
-
-        TileAnimation anim{};
-
-        for (XMLElement* frame = animation->FirstChildElement("frame"); frame; frame = frame->NextSiblingElement("frame"))
-        {
-            AnimationFrame animFrame{};
-            animFrame.tileId = frame->IntAttribute("tileid", tileId);
-            animFrame.durationMs = frame->IntAttribute("duration", 0);
-
-            if (animFrame.durationMs <= 0)
-                animFrame.durationMs = 100;
-
-            anim.totalDurationMs += animFrame.durationMs;
-            anim.frames.push_back(animFrame);
-        }
-
-        if (!anim.frames.empty() && anim.totalDurationMs > 0)
-            outMap.animations[tileId] = anim;
-    }
+    std::sort(mapData.tilesets.begin(), mapData.tilesets.end(),
+        [](const TilesetDef& a, const TilesetDef& b) { return a.firstGid < b.firstGid; });
 
     // --- Tile layers
-    outMap.mapData.width = outMap.width;
-    outMap.mapData.height = outMap.height;
-    outMap.mapData.tileW = outMap.tileWidth;
-    outMap.mapData.tileH = outMap.tileHeight;
-    outMap.mapData.firstGid = outMap.firstGid;
-
     std::vector<uint8_t> collisionTiles(expectedCount, 0);
     bool hasCollisionLayer = false;
 
     for (XMLElement* layer = map->FirstChildElement("layer"); layer; layer = layer->NextSiblingElement("layer"))
     {
-        LoadedTileLayer loadedLayer{};
         const char* name = layer->Attribute("name");
-        loadedLayer.name = name ? name : "";
-        loadedLayer.visible = GetBoolAttribute(layer, "visible", true);
+        const std::string layerName = name ? name : "";
+        const bool visible = GetBoolAttribute(layer, "visible", true);
 
-        const std::string lowerName = ToLower(loadedLayer.name);
-        loadedLayer.isCollision = (lowerName == "collision");
+        const std::string lowerName = ToLower(layerName);
+        const bool isCollision = (lowerName == "collision");
 
         XMLElement* data = layer->FirstChildElement("data");
         if (!data)
         {
-            std::cerr << "Layer '" << loadedLayer.name << "' missing <data>\n";
+            std::cerr << "Layer '" << layerName << "' missing <data>\n";
             continue;
         }
 
         const char* encoding = data->Attribute("encoding");
         if (!encoding || std::string(encoding) != "csv")
         {
-            std::cerr << "Layer '" << loadedLayer.name << "' is not CSV encoded\n";
+            std::cerr << "Layer '" << layerName << "' is not CSV encoded\n";
             continue;
         }
 
         std::vector<int> rawGids = ParseCsvTiles(data->GetText(), expectedCount);
         if ((int)rawGids.size() != expectedCount)
         {
-            std::cerr << "Layer '" << loadedLayer.name << "' size mismatch. Expected "
+            std::cerr << "Layer '" << layerName << "' size mismatch. Expected "
                 << expectedCount << " entries but got " << rawGids.size() << "\n";
             continue;
         }
 
-        if (loadedLayer.isCollision)
+        if (isCollision)
         {
             hasCollisionLayer = true;
             for (int i = 0; i < expectedCount; ++i)
@@ -334,25 +331,26 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             continue;
         }
 
-        std::vector<int> tiles(expectedCount, -1);
+        std::vector<uint32_t> tiles(expectedCount, 0);
         for (int i = 0; i < expectedCount; ++i)
         {
             const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
-            tiles[i] = GidToLocal(gid, outMap.firstGid, outMap.atlasTileCount);
+            tiles[i] = gid;
         }
 
         if (lowerName == "ground")
-            outMap.mapData.ground = std::move(tiles);
+            mapData.groundGids = std::move(tiles);
         else if (lowerName == "walls")
-            outMap.mapData.walls = std::move(tiles);
+            mapData.wallsGids = std::move(tiles);
         else if (lowerName == "overhead")
-            outMap.mapData.overhead = std::move(tiles);
+            mapData.overheadGids = std::move(tiles);
+        (void)visible;
     }
 
     if (hasCollisionLayer)
-        outMap.mapData.collision = std::move(collisionTiles);
+        mapData.collision = std::move(collisionTiles);
     else
-        outMap.mapData.collision.assign(expectedCount, 0);
+        mapData.collision.assign(expectedCount, 0);
 
     // --- Object layer: <objectgroup name="objects">
     for (XMLElement* objectGroup = map->FirstChildElement("objectgroup"); objectGroup; objectGroup = objectGroup->NextSiblingElement("objectgroup"))
@@ -379,19 +377,19 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 GetFloatAttribute(object, "height", 0.0f));
 
             mapObject.properties = ParseProperties(object->FirstChildElement("properties"));
-            outMap.objects.push_back(std::move(mapObject));
+            mapData.objects.push_back(std::move(mapObject));
         }
     }
 
     std::cout << "TMX loaded: " << tmxPath << "\n";
-    std::cout << "  map size: " << outMap.width << " x " << outMap.height << " tiles\n";
-    std::cout << "  tile size: " << outMap.tileWidth << " x " << outMap.tileHeight << " px\n";
-    std::cout << "  layers: ground=" << (outMap.mapData.HasGround() ? "yes" : "no")
-              << " walls=" << (outMap.mapData.HasWalls() ? "yes" : "no")
-              << " overhead=" << (outMap.mapData.HasOverhead() ? "yes" : "no")
+    std::cout << "  map size: " << mapData.width << " x " << mapData.height << " tiles\n";
+    std::cout << "  tile size: " << mapData.tileW << " x " << mapData.tileH << " px\n";
+    std::cout << "  tilesets: " << mapData.tilesets.size() << "\n";
+    std::cout << "  layers: ground=" << (mapData.HasGround() ? "yes" : "no")
+              << " walls=" << (mapData.HasWalls() ? "yes" : "no")
+              << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
               << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
-    std::cout << "  objects: " << outMap.objects.size() << "\n";
-    std::cout << "  animated tiles: " << outMap.animations.size() << "\n";
+    std::cout << "  objects: " << mapData.objects.size() << "\n";
 
     return true;
 }

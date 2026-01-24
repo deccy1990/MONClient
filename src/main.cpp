@@ -10,6 +10,7 @@
 #include "SpriteRenderer.h"
 #include "Camera2d.h"
 #include "TileMap.h"
+#include "TileResolver.h"
 #include "TileSet.h"
 #include "Player.h"
 #include "TmxLoader.h"
@@ -416,18 +417,36 @@ int main()
     Load textures (ONCE)
     ============================================
     Required files:
-    - assets/tiles.png   (your atlas: 4x2 grid, 8 tiles, each 64x32)
+    - tileset images referenced by the TMX/TSX
     - assets/test.png    (optional sprite test)
 	- assets/player.png  (player sprite)
 	- assets/collision.png (collision debug view)
     */
-    Texture2D atlas = LoadTextureRGBA(loadedMap.tilesetImagePath.c_str(), true);
-    if (!atlas.id)
+    std::vector<Texture2D> tilesetTextures;
+    std::vector<TilesetRuntime> tilesetRuntimes;
+    tilesetTextures.reserve(loadedMap.mapData.tilesets.size());
+    tilesetRuntimes.reserve(loadedMap.mapData.tilesets.size());
+
+    for (const TilesetDef& tilesetDef : loadedMap.mapData.tilesets)
     {
-        std::cerr << "Failed to load tileset image: " << loadedMap.tilesetImagePath << "\n";
-        glfwTerminate();
-        return -1;
+        Texture2D texture = LoadTextureRGBA(tilesetDef.imagePath.c_str(), true);
+        if (!texture.id)
+        {
+            std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
+            glfwTerminate();
+            return -1;
+        }
+
+        tilesetTextures.push_back(texture);
+
+        TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
+        tileset.SetAnimations(tilesetDef.animations);
+
+        TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
+        tilesetRuntimes.push_back(std::move(runtime));
     }
+
+    TileResolver tileResolver(tilesetRuntimes);
 
     Texture2D playerTex = LoadTextureRGBA("assets/player.png", false);
     if (!playerTex.id)
@@ -459,29 +478,25 @@ int main()
 
    /*
    ============================================
-   Create TileSet (atlas UV mapper) + TileMap
+   Create TileMap
    ============================================
    Chosen tile size: 64x32
    */
-    TileSet tileset(atlas.width, atlas.height, tileW, tileH);
-    tileset.SetAnimations(loadedMap.animations);
-
-    //Atlas debug size
-
-    std::cout << "atlas size: " << atlas.width << " x " << atlas.height << "\n";
+    if (!tilesetTextures.empty())
+        std::cout << "tileset[0] size: " << tilesetTextures.front().width << " x " << tilesetTextures.front().height << "\n";
 
 
     std::vector<uint8_t> collisionGrid = loadedMap.mapData.collision;
 
     // Spawn player from object layer when available
-    for (const MapObject& object : loadedMap.objects)
+    for (const MapObject& object : loadedMap.mapData.objects)
     {
         std::string lowerName = object.name;
         std::string lowerType = object.type;
         std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
         std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-        if (lowerName == "player" || lowerType == "player")
+        if (lowerName == "playerspawn" || lowerType == "playerspawn" || lowerName == "player" || lowerType == "player")
         {
             glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
             spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
@@ -529,21 +544,21 @@ int main()
         player.SetGridPos(newPos);
     }
 
-    auto MakeTileLayer = [&](const std::vector<int>& tiles)
+    auto MakeTileLayer = [&](const std::vector<uint32_t>& tiles)
     {
         if ((int)tiles.size() == mapW * mapH)
             return tiles;
 
-        return std::vector<int>(mapW * mapH, -1);
+        return std::vector<uint32_t>(mapW * mapH, 0);
     };
 
     TileMap groundMap(mapW, mapH, tileW, tileH);
     TileMap wallsMap(mapW, mapH, tileW, tileH);
     TileMap overheadMap(mapW, mapH, tileW, tileH);
 
-    groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.ground), true, true);
-    wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.walls), true, true);
-    overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overhead), true, true);
+    groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.groundGids), true, true);
+    wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
+    overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
 
 
 
@@ -794,9 +809,9 @@ int main()
         // ------------------------------------
         // Draw world
         // ------------------------------------
-        groundMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, nullptr, animationTimeMs);
-        wallsMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player, animationTimeMs);
-        overheadMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, nullptr, animationTimeMs);
+        groundMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
+        wallsMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, &player, animationTimeMs);
+        overheadMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
 
         glfwSwapBuffers(window);
     }

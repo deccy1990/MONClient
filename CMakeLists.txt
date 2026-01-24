@@ -13,6 +13,7 @@ add_executable(MONClient
     src/SpriteRenderer.cpp
     src/TileMap.cpp
     src/TileSet.cpp
+    src/TileResolver.cpp
     src/Player.cpp
     src/TmxLoader.cpp
     third_party/tinyxml2/tinyxml2.cpp

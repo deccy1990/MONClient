@@ -3,7 +3,7 @@
 #include "Camera2d.h"
 #include "Player.h"
 #include "SpriteRenderer.h"
-#include "TileSet.h"
+#include "TileResolver.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +16,7 @@ TileMap::TileMap(int width, int height, int tileWidthPx, int tileHeightPx)
 {
 }
 
-void TileMap::AddLayer(const std::string& name, const std::vector<int>& tiles, bool visible, bool renderable)
+void TileMap::AddLayer(const std::string& name, const std::vector<uint32_t>& tiles, bool visible, bool renderable)
 {
     if ((int)tiles.size() != mWidth * mHeight)
         return;
@@ -30,17 +30,16 @@ void TileMap::AddLayer(const std::string& name, const std::vector<int>& tiles, b
     mLayers.push_back(std::move(layer));
 }
 
-int TileMap::GetLayerTile(const TileLayer& layer, int x, int y) const
+uint32_t TileMap::GetLayerTile(const TileLayer& layer, int x, int y) const
 {
     if (x < 0 || x >= mWidth || y < 0 || y >= mHeight)
-        return -1;
+        return 0;
 
     return layer.tiles[Index(x, y)];
 }
 
 void TileMap::Draw(SpriteRenderer& renderer,
-    GLuint atlasTexture,
-    const TileSet& tileset,
+    const TileResolver& resolver,
     const Camera2D& camera,
     const glm::ivec2& viewportSizePx,
     const Player* player,
@@ -108,16 +107,15 @@ void TileMap::Draw(SpriteRenderer& renderer,
                 if (!layer.visible || !layer.renderable)
                     continue;
 
-                int id = GetLayerTile(layer, x, y);
-                if (id < 0)
+                uint32_t gid = GetLayerTile(layer, x, y);
+                if (gid == 0)
                     continue;
 
-                const int resolvedId = tileset.ResolveTileId(id, animationTimeMs);
+                ResolvedTile resolved{};
+                if (!resolver.Resolve(gid, animationTimeMs, resolved))
+                    continue;
 
-                glm::vec2 uvMin, uvMax;
-                tileset.GetUV(resolvedId, uvMin, uvMax);
-
-                renderer.Draw(atlasTexture, worldPos, size, camera, uvMin, uvMax);
+                renderer.Draw(resolved.textureId, worldPos, size, camera, resolved.uvMin, resolved.uvMax);
             }
 
             if (player &&
