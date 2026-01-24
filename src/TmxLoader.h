@@ -44,6 +44,7 @@ struct LoadedMap
     int tileHeight = 0;
 
     int firstGid = 1;
+    int atlasTileCount = 0;
     std::string tilesetImagePath;
 
     std::vector<LoadedTileLayer> layers;
