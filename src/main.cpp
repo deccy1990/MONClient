@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <filesystem>
+#include <cstdint>
 #include "tinyxml2.h"
 
 // Engine modules
@@ -385,10 +386,10 @@ int main()
         return -1;
     }
 
-    const int tileW = loadedMap.tileWidth;
-    const int tileH = loadedMap.tileHeight;
-    const int mapW = loadedMap.width;
-    const int mapH = loadedMap.height;
+    const int tileW = loadedMap.mapData.tileW;
+    const int tileH = loadedMap.mapData.tileH;
+    const int mapW = loadedMap.mapData.width;
+    const int mapH = loadedMap.mapData.height;
 
     /*
     ============================================
@@ -470,7 +471,7 @@ int main()
     std::cout << "atlas size: " << atlas.width << " x " << atlas.height << "\n";
 
 
-    std::vector<int> collisionGrid = loadedMap.collision;
+    std::vector<uint8_t> collisionGrid = loadedMap.mapData.collision;
 
     // Spawn player from object layer when available
     for (const MapObject& object : loadedMap.objects)
@@ -528,12 +529,21 @@ int main()
         player.SetGridPos(newPos);
     }
 
-    TileMap map(mapW, mapH, tileW, tileH);
-
-    for (const LoadedTileLayer& layer : loadedMap.layers)
+    auto MakeTileLayer = [&](const std::vector<int>& tiles)
     {
-        map.AddLayer(layer.name, layer.tiles, layer.visible, !layer.isCollision);
-    }
+        if ((int)tiles.size() == mapW * mapH)
+            return tiles;
+
+        return std::vector<int>(mapW * mapH, -1);
+    };
+
+    TileMap groundMap(mapW, mapH, tileW, tileH);
+    TileMap wallsMap(mapW, mapH, tileW, tileH);
+    TileMap overheadMap(mapW, mapH, tileW, tileH);
+
+    groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.ground), true, true);
+    wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.walls), true, true);
+    overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overhead), true, true);
 
 
 
@@ -784,7 +794,9 @@ int main()
         // ------------------------------------
         // Draw world
         // ------------------------------------
-        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player, animationTimeMs);
+        groundMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, nullptr, animationTimeMs);
+        wallsMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player, animationTimeMs);
+        overheadMap.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, nullptr, animationTimeMs);
 
         glfwSwapBuffers(window);
     }
