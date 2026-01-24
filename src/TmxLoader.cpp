@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -11,6 +12,12 @@
 
 namespace
 {
+    constexpr uint32_t TMX_FLIPPED_HORIZONTALLY_FLAG = 0x80000000u;
+    constexpr uint32_t TMX_FLIPPED_VERTICALLY_FLAG = 0x40000000u;
+    constexpr uint32_t TMX_FLIPPED_DIAGONALLY_FLAG = 0x20000000u;
+    constexpr uint32_t TMX_GID_MASK =
+        ~(TMX_FLIPPED_HORIZONTALLY_FLAG | TMX_FLIPPED_VERTICALLY_FLAG | TMX_FLIPPED_DIAGONALLY_FLAG);
+
     std::string ToLower(std::string value)
     {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
@@ -188,6 +195,31 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
         return false;
     }
 
+    outMap.atlasTileCount = tsxTileset->IntAttribute("tilecount", 0);
+    if (outMap.atlasTileCount <= 0)
+    {
+        const int columns = tsxTileset->IntAttribute("columns", 0);
+        const int tileWidth = tsxTileset->IntAttribute("tilewidth", outMap.tileWidth);
+        const int tileHeight = tsxTileset->IntAttribute("tileheight", outMap.tileHeight);
+
+        int rows = 0;
+        if (columns > 0 && tileWidth > 0 && tileHeight > 0)
+        {
+            const int imageWidth = tsxTileset->FirstChildElement("image")
+                ? tsxTileset->FirstChildElement("image")->IntAttribute("width", 0)
+                : 0;
+            const int imageHeight = tsxTileset->FirstChildElement("image")
+                ? tsxTileset->FirstChildElement("image")->IntAttribute("height", 0)
+                : 0;
+
+            if (imageWidth > 0 && imageHeight > 0)
+                rows = (imageHeight / tileHeight);
+        }
+
+        if (columns > 0 && rows > 0)
+            outMap.atlasTileCount = columns * rows;
+    }
+
     XMLElement* image = tsxTileset->FirstChildElement("image");
     if (!image)
     {
@@ -274,14 +306,22 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
 
         for (int i = 0; i < expectedCount; ++i)
         {
-            const int gid = rawGids[i];
-            if (gid <= 0)
+            const uint32_t raw = static_cast<uint32_t>(rawGids[i]);
+            const uint32_t gid = raw & TMX_GID_MASK;
+            if (gid == 0)
             {
                 loadedLayer.tiles[i] = -1;
                 continue;
             }
 
-            loadedLayer.tiles[i] = gid - outMap.firstGid;
+            const int localId = static_cast<int>(gid) - outMap.firstGid;
+            if (localId < 0 || (outMap.atlasTileCount > 0 && localId >= outMap.atlasTileCount))
+            {
+                loadedLayer.tiles[i] = -1;
+                continue;
+            }
+
+            loadedLayer.tiles[i] = localId;
         }
 
         if (loadedLayer.isCollision)
@@ -289,7 +329,8 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             hasCollisionLayer = true;
             for (int i = 0; i < expectedCount; ++i)
             {
-                collisionTiles[i] = rawGids[i] != 0 ? 1 : 0;
+                const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
+                collisionTiles[i] = gid == 0 ? 0 : 1;
             }
         }
 
