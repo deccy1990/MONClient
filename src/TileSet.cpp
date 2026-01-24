@@ -1,10 +1,41 @@
 #include "TileSet.h"
 
+#include <cmath>
+
 TileSet::TileSet(int atlasWidthPx, int atlasHeightPx, int tileWidthPx, int tileHeightPx)
     : mAtlasW(atlasWidthPx), mAtlasH(atlasHeightPx), mTileW(tileWidthPx), mTileH(tileHeightPx)
 {
     mCols = (mTileW > 0) ? (mAtlasW / mTileW) : 0;
     mRows = (mTileH > 0) ? (mAtlasH / mTileH) : 0;
+}
+
+void TileSet::SetAnimations(const std::unordered_map<int, TileAnimation>& animations)
+{
+    mAnimations = animations;
+}
+
+int TileSet::ResolveTileId(int tileId, float animationTimeMs) const
+{
+    const auto it = mAnimations.find(tileId);
+    if (it == mAnimations.end())
+        return tileId;
+
+    const TileAnimation& anim = it->second;
+    if (anim.frames.empty() || anim.totalDurationMs <= 0)
+        return tileId;
+
+    const int totalDuration = anim.totalDurationMs;
+    const int timeInCycle = static_cast<int>(std::floor(animationTimeMs)) % totalDuration;
+
+    int accumulated = 0;
+    for (const AnimationFrame& frame : anim.frames)
+    {
+        accumulated += frame.durationMs;
+        if (timeInCycle < accumulated)
+            return frame.tileId;
+    }
+
+    return anim.frames.back().tileId;
 }
 
 void TileSet::GetUV(int tileId, glm::vec2& outUvMin, glm::vec2& outUvMax) const

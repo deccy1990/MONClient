@@ -11,6 +11,9 @@
 #include "TileMap.h"
 #include "TileSet.h"
 #include "Player.h"
+#include "TmxLoader.h"
+#include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <fstream>
 #include <sstream>
@@ -374,7 +377,18 @@ int main()
     }
 
     std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
-    DebugLoadTMX("assets/maps/testmap.tmx");
+
+    LoadedMap loadedMap;
+    if (!LoadTmxMap("assets/maps/testmap.tmx", loadedMap))
+    {
+        glfwTerminate();
+        return -1;
+    }
+
+    const int tileW = loadedMap.tileWidth;
+    const int tileH = loadedMap.tileHeight;
+    const int mapW = loadedMap.width;
+    const int mapH = loadedMap.height;
 
     /*
     ============================================
@@ -406,10 +420,10 @@ int main()
 	- assets/player.png  (player sprite)
 	- assets/collision.png (collision debug view)
     */
-    Texture2D atlas = LoadTextureRGBA("assets/tiles.png", true);
+    Texture2D atlas = LoadTextureRGBA(loadedMap.tilesetImagePath.c_str(), true);
     if (!atlas.id)
     {
-        std::cerr << "Failed to load assets/tiles.png\n";
+        std::cerr << "Failed to load tileset image: " << loadedMap.tilesetImagePath << "\n";
         glfwTerminate();
         return -1;
     }
@@ -437,7 +451,7 @@ int main()
     // Camera position is world-space top-left of viewport
     Camera2D camera({ 0.0f, 0.0f });
 
-    // Create player (tile position 5,5 and sprite size 64x96)
+    // Create player (fallback tile position 5,5 and sprite size 64x96)
     Player player(playerTex.id, { 5, 5 }, { 64.0f, 96.0f });
     player.SetGridPos({ 5.0f, 5.0f });
 
@@ -448,38 +462,35 @@ int main()
    ============================================
    Chosen tile size: 64x32
    */
-    const int tileW = 64;
-    const int tileH = 32;
-
     TileSet tileset(atlas.width, atlas.height, tileW, tileH);
+    tileset.SetAnimations(loadedMap.animations);
 
     //Atlas debug size
 
     std::cout << "atlas size: " << atlas.width << " x " << atlas.height << "\n";
 
 
-    // ------------------------------------
-  // Load map from CSV (ground + collision)
-  // ------------------------------------
-    std::vector<int> ground;
-    std::vector<int> collision;
+    std::vector<int> collisionGrid = loadedMap.collision;
 
-    int csvW = 0, csvH = 0;
-    if (!LoadCSVIntGrid("assets/maps/ground.csv", ground, csvW, csvH))
-        return -1;
-
-    int colW = 0, colH = 0;
-    if (!LoadCSVIntGrid("assets/maps/collision.csv", collision, colW, colH))
-        return -1;
-
-    if (colW != csvW || colH != csvH)
+    // Spawn player from object layer when available
+    for (const MapObject& object : loadedMap.objects)
     {
-        std::cerr << "collision.csv size does not match ground.csv\n";
-        return -1;
-    }
+        std::string lowerName = object.name;
+        std::string lowerType = object.type;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
-    const int mapW = csvW;
-    const int mapH = csvH;
+        if (lowerName == "player" || lowerType == "player")
+        {
+            glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
+            spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
+            spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
+            player.SetGridPos(spawnGrid);
+            std::cout << "Player spawn from object id=" << object.id
+                      << " grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
+            break;
+        }
+    }
 
     // ------------------------------------
     // Spawn sanity check
@@ -487,7 +498,7 @@ int main()
     auto IsBlockedAtSpawn = [&](int tx, int ty) -> bool
     {
         if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH) return true;
-        return collision[ty * mapW + tx] != 0;
+        return collisionGrid[ty * mapW + tx] != 0;
     };
 
     int spX = (int)std::floor(player.GetGridPos().x);
@@ -500,7 +511,7 @@ int main()
     {
         for (int y = 0; y < mapH; ++y)
             for (int x = 0; x < mapW; ++x)
-                if (collision[y * mapW + x] == 0)
+                if (collisionGrid[y * mapW + x] == 0)
                     return glm::vec2((float)x + 0.5f, (float)y + 0.5f);
         return glm::vec2(1.0f, 1.0f);
     };
@@ -509,7 +520,7 @@ int main()
     int sx = (int)std::floor(start.x);
     int sy = (int)std::floor(start.y);
 
-    if (sx < 0 || sx >= mapW || sy < 0 || sy >= mapH || collision[sy * mapW + sx] != 0)
+    if (sx < 0 || sx >= mapW || sy < 0 || sy >= mapH || collisionGrid[sy * mapW + sx] != 0)
     {
         glm::vec2 newPos = FindFirstWalkable();
         std::cout << "Spawn blocked, moving player to walkable tile at "
@@ -519,27 +530,10 @@ int main()
 
     TileMap map(mapW, mapH, tileW, tileH);
 
-    // Fill visuals from ground layer
-    for (int y = 0; y < mapH; ++y)
+    for (const LoadedTileLayer& layer : loadedMap.layers)
     {
-        for (int x = 0; x < mapW; ++x)
-        {
-            int id = ground[y * mapW + x];
-            map.SetTile(x, y, id);
-        }
+        map.AddLayer(layer.name, layer.tiles, layer.visible, !layer.isCollision);
     }
-
-
-
-    for (int i = 0; i < 8; ++i)
-    {
-        glm::vec2 a, b;
-        tileset.GetUV(i, a, b);
-        std::cout << "tile " << i << " uvMin=(" << a.x << "," << a.y << ") uvMax=(" << b.x << "," << b.y << ")\n";
-    }
-        
-    // Confirm what ID is actually stored there
-    std::cout << "Wall test tile id at (10,15) = " << map.GetTile(10, 15) << "\n";
 
 
 
@@ -577,6 +571,9 @@ int main()
 
         // Safety clamp (avoid huge jumps after breakpoints/tab-out)
         if (deltaTime > 0.05f) deltaTime = 0.05f;
+
+        static float animationTimeMs = 0.0f;
+        animationTimeMs += deltaTime * 1000.0f;
 
         // ------------------------------------
         // Update framebuffer size (projection depends on it)
@@ -680,7 +677,7 @@ int main()
                 if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH)
                     return true; // outside map = solid
 
-                return collision[ty * mapW + tx] != 0;
+                return collisionGrid[ty * mapW + tx] != 0;
             };
 
         // Checks if player AABB (in grid space) overlaps any blocked tiles
@@ -787,7 +784,7 @@ int main()
         // ------------------------------------
         // Draw world
         // ------------------------------------
-        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player);
+        map.Draw(renderer, atlas.id, tileset, camera, { fbW, fbH }, &player, animationTimeMs);
 
         glfwSwapBuffers(window);
     }

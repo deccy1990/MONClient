@@ -14,6 +14,7 @@ add_executable(MONClient
     src/TileMap.cpp
     src/TileSet.cpp
     src/Player.cpp
+    src/TmxLoader.cpp
     third_party/tinyxml2/tinyxml2.cpp
 )
 
