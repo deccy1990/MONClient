@@ -1,6 +1,6 @@
 #include "Player.h"
 #include "SpriteRenderer.h"
-#include "Camera2D.h"
+#include "Camera2d.h"
 
 /*
     We anchor the player's feet at the bottom-center of the tile:

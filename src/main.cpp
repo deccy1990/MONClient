@@ -3,10 +3,11 @@
 
 #include <iostream>
 #include <filesystem>
+#include "tinyxml2.h"
 
 // Engine modules
 #include "SpriteRenderer.h"
-#include "Camera2D.h"
+#include "Camera2d.h"
 #include "TileMap.h"
 #include "TileSet.h"
 #include "Player.h"
@@ -16,7 +17,7 @@
 #include <string>
 #include <vector>
 
-// stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
+// stb_image (ONLY define implementation in ONE .cpp file  main.cpp is a good choice)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -246,6 +247,92 @@ static bool LoadCSVIntGrid(const std::string& path,
     return true;
 }
 
+// ------------------------------------
+// TMX test: load and print basic map info
+// ------------------------------------
+static bool DebugLoadTMX(const char* tmxPath)
+{
+    using namespace tinyxml2;
+
+    XMLDocument doc;
+    XMLError err = doc.LoadFile(tmxPath);
+    if (err != XML_SUCCESS)
+    {
+        std::cerr << "Failed to load TMX: " << tmxPath
+            << " error=" << doc.ErrorStr() << "\n";
+        return false;
+    }
+
+    XMLElement* map = doc.FirstChildElement("map");
+    if (!map)
+    {
+        std::cerr << "TMX missing <map> root element\n";
+        return false;
+    }
+
+    int width = map->IntAttribute("width");
+    int height = map->IntAttribute("height");
+    int tileW = map->IntAttribute("tilewidth");
+    int tileH = map->IntAttribute("tileheight");
+
+    const char* orientation = map->Attribute("orientation");
+
+    std::cout << "TMX loaded: " << tmxPath << "\n";
+    std::cout << "  orientation: " << (orientation ? orientation : "(none)") << "\n";
+    std::cout << "  map size: " << width << " x " << height << " tiles\n";
+    std::cout << "  tile size: " << tileW << " x " << tileH << " px\n";
+
+    for (XMLElement* ts = map->FirstChildElement("tileset"); ts; ts = ts->NextSiblingElement("tileset"))
+    {
+        int firstGid = ts->IntAttribute("firstgid");
+        const char* source = ts->Attribute("source");
+        const char* name = ts->Attribute("name");
+
+        std::cout << "  tileset: firstgid=" << firstGid
+            << " source=" << (source ? source : "(inline)")
+            << " name=" << (name ? name : "(none)")
+            << "\n";
+    }
+
+    for (XMLElement* layer = map->FirstChildElement("layer"); layer; layer = layer->NextSiblingElement("layer"))
+    {
+        const char* lname = layer->Attribute("name");
+        int lw = layer->IntAttribute("width");
+        int lh = layer->IntAttribute("height");
+
+        std::cout << "  layer: " << (lname ? lname : "(unnamed)")
+            << " size=" << lw << "x" << lh << "\n";
+
+        XMLElement* data = layer->FirstChildElement("data");
+        if (!data)
+        {
+            std::cout << "    (no <data>)\n";
+            continue;
+        }
+
+        const char* encoding = data->Attribute("encoding");
+        if (!encoding || std::string(encoding) != "csv")
+        {
+            std::cout << "    data encoding is not CSV (encoding="
+                << (encoding ? encoding : "(none)") << ")\n";
+            continue;
+        }
+
+        const char* csv = data->GetText();
+        if (!csv)
+        {
+            std::cout << "    (empty csv)\n";
+            continue;
+        }
+
+        std::string preview(csv);
+        if (preview.size() > 60) preview.resize(60);
+        std::cout << "    csv preview: " << preview << "...\n";
+    }
+
+    return true;
+}
+
 int main()
 {
     /*
@@ -287,6 +374,7 @@ int main()
     }
 
     std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
+    DebugLoadTMX("assets/maps/testmap.tmx");
 
     /*
     ============================================
@@ -468,7 +556,7 @@ int main()
 
         // ------------------------------------
         // Movement speed (stored for later smooth movement + stamina)
-        // NOTE: tile-step movement doesn’t use moveSpeed yet; we will in the next step.
+        // NOTE: tile-step movement doesnt use moveSpeed yet; we will in the next step.
         // ------------------------------------
         float walkSpeed = 120.0f;
         float runSpeed = 200.0f;
@@ -506,7 +594,7 @@ int main()
             gridDir = glm::normalize(gridDir);
 
 
-        // Normalize so diagonal isn’t faster
+        // Normalize so diagonal isnt faster
         if (gridDir.x != 0.0f || gridDir.y != 0.0f)
             gridDir = glm::normalize(gridDir);
 

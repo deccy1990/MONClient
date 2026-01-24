@@ -1,4 +1,4 @@
-#include "Camera2D.h"
+#include "Camera2d.h"
 
 Camera2D::Camera2D(const glm::vec2& position)
     : mPosition(position)
