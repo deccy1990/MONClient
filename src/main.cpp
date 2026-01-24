@@ -481,6 +481,42 @@ int main()
     const int mapW = csvW;
     const int mapH = csvH;
 
+    // ------------------------------------
+    // Spawn sanity check
+    // ------------------------------------
+    auto IsBlockedAtSpawn = [&](int tx, int ty) -> bool
+    {
+        if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH) return true;
+        return collision[ty * mapW + tx] != 0;
+    };
+
+    int spX = (int)std::floor(player.GetGridPos().x);
+    int spY = (int)std::floor(player.GetGridPos().y);
+
+    std::cout << "Spawn tile = (" << spX << "," << spY << ") collision="
+              << (IsBlockedAtSpawn(spX, spY) ? 1 : 0) << "\n";
+
+    auto FindFirstWalkable = [&]() -> glm::vec2
+    {
+        for (int y = 0; y < mapH; ++y)
+            for (int x = 0; x < mapW; ++x)
+                if (collision[y * mapW + x] == 0)
+                    return glm::vec2((float)x + 0.5f, (float)y + 0.5f);
+        return glm::vec2(1.0f, 1.0f);
+    };
+
+    glm::vec2 start = player.GetGridPos();
+    int sx = (int)std::floor(start.x);
+    int sy = (int)std::floor(start.y);
+
+    if (sx < 0 || sx >= mapW || sy < 0 || sy >= mapH || collision[sy * mapW + sx] != 0)
+    {
+        glm::vec2 newPos = FindFirstWalkable();
+        std::cout << "Spawn blocked, moving player to walkable tile at "
+                  << newPos.x << "," << newPos.y << "\n";
+        player.SetGridPos(newPos);
+    }
+
     TileMap map(mapW, mapH, tileW, tileH);
 
     // Fill visuals from ground layer
@@ -633,10 +669,10 @@ int main()
         }
 
         // ------------------------------------
-   // Collision settings (grid units)
-   // ------------------------------------
-   // Player hitbox in TILE units (tune later)
-        const glm::vec2 playerHalfExtents(0.18f, 0.12f);
+        // Collision settings (grid units)
+        // ------------------------------------
+        // Player hitbox in TILE units (tune later)
+        const glm::vec2 playerHalfExtents(0.05f, 0.05f);
 
         // 0 = walkable, 1 = blocked
         auto IsBlockedAt = [&](int tx, int ty) -> bool
