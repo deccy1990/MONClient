@@ -29,12 +29,17 @@ struct MapObject
     std::unordered_map<std::string, std::string> properties;
 };
 
-struct LoadedTileLayer
+struct TilesetDef
 {
-    std::string name;
-    std::vector<int> tiles; // 0-based tile ids, -1 for empty
-    bool visible = true;
-    bool isCollision = false;
+    int firstGid = 1;
+    int tileCount = 0;
+    int columns = 0;
+    int tileW = 0;
+    int tileH = 0;
+    std::string imagePath;
+    int imageW = 0;
+    int imageH = 0;
+    std::unordered_map<int, TileAnimation> animations;
 };
 
 struct MapData
@@ -44,36 +49,24 @@ struct MapData
     int tileW = 0;
     int tileH = 0;
 
-    int firstGid = 1;
+    std::vector<TilesetDef> tilesets;
 
-    std::vector<int> ground;
-    std::vector<int> walls;
-    std::vector<int> overhead;
+    std::vector<uint32_t> groundGids;
+    std::vector<uint32_t> wallsGids;
+    std::vector<uint32_t> overheadGids;
 
     std::vector<uint8_t> collision;
+    std::vector<MapObject> objects;
 
-    bool HasGround() const { return (int)ground.size() == width * height; }
-    bool HasWalls() const { return (int)walls.size() == width * height; }
-    bool HasOverhead() const { return (int)overhead.size() == width * height; }
+    bool HasGround() const { return (int)groundGids.size() == width * height; }
+    bool HasWalls() const { return (int)wallsGids.size() == width * height; }
+    bool HasOverhead() const { return (int)overheadGids.size() == width * height; }
     bool HasCollision() const { return (int)collision.size() == width * height; }
 };
 
 struct LoadedMap
 {
-    int width = 0;
-    int height = 0;
-    int tileWidth = 0;
-    int tileHeight = 0;
-
-    int firstGid = 1;
-    int atlasTileCount = 0;
-    std::string tilesetImagePath;
-
     MapData mapData;
-
-    std::vector<MapObject> objects;
-
-    std::unordered_map<int, TileAnimation> animations;
 };
 
 bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap);
