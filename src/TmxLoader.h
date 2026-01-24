@@ -2,6 +2,7 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -36,6 +37,27 @@ struct LoadedTileLayer
     bool isCollision = false;
 };
 
+struct MapData
+{
+    int width = 0;
+    int height = 0;
+    int tileW = 0;
+    int tileH = 0;
+
+    int firstGid = 1;
+
+    std::vector<int> ground;
+    std::vector<int> walls;
+    std::vector<int> overhead;
+
+    std::vector<uint8_t> collision;
+
+    bool HasGround() const { return (int)ground.size() == width * height; }
+    bool HasWalls() const { return (int)walls.size() == width * height; }
+    bool HasOverhead() const { return (int)overhead.size() == width * height; }
+    bool HasCollision() const { return (int)collision.size() == width * height; }
+};
+
 struct LoadedMap
 {
     int width = 0;
@@ -47,8 +69,7 @@ struct LoadedMap
     int atlasTileCount = 0;
     std::string tilesetImagePath;
 
-    std::vector<LoadedTileLayer> layers;
-    std::vector<int> collision; // 0 = walkable, 1 = blocked
+    MapData mapData;
 
     std::vector<MapObject> objects;
 

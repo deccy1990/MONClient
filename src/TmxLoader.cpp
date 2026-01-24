@@ -108,6 +108,21 @@ namespace
 
         return value;
     }
+
+    int GidToLocal(uint32_t gid, int firstGid, int atlasTileCount)
+    {
+        if (gid == 0)
+            return -1;
+
+        const int localId = static_cast<int>(gid) - firstGid;
+        if (localId < 0)
+            return -1;
+
+        if (atlasTileCount > 0 && localId >= atlasTileCount)
+            return -1;
+
+        return localId;
+    }
 }
 
 glm::vec2 ObjectPixelsToGrid(const glm::vec2& objectPosPx, int tileWidth, int tileHeight)
@@ -267,7 +282,13 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     }
 
     // --- Tile layers
-    std::vector<int> collisionTiles(expectedCount, 0);
+    outMap.mapData.width = outMap.width;
+    outMap.mapData.height = outMap.height;
+    outMap.mapData.tileW = outMap.tileWidth;
+    outMap.mapData.tileH = outMap.tileHeight;
+    outMap.mapData.firstGid = outMap.firstGid;
+
+    std::vector<uint8_t> collisionTiles(expectedCount, 0);
     bool hasCollisionLayer = false;
 
     for (XMLElement* layer = map->FirstChildElement("layer"); layer; layer = layer->NextSiblingElement("layer"))
@@ -302,28 +323,6 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             continue;
         }
 
-        loadedLayer.tiles.resize(expectedCount, -1);
-
-        for (int i = 0; i < expectedCount; ++i)
-        {
-            const uint32_t raw = static_cast<uint32_t>(rawGids[i]);
-            const uint32_t gid = raw & TMX_GID_MASK;
-            if (gid == 0)
-            {
-                loadedLayer.tiles[i] = -1;
-                continue;
-            }
-
-            const int localId = static_cast<int>(gid) - outMap.firstGid;
-            if (localId < 0 || (outMap.atlasTileCount > 0 && localId >= outMap.atlasTileCount))
-            {
-                loadedLayer.tiles[i] = -1;
-                continue;
-            }
-
-            loadedLayer.tiles[i] = localId;
-        }
-
         if (loadedLayer.isCollision)
         {
             hasCollisionLayer = true;
@@ -332,15 +331,28 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
                 collisionTiles[i] = gid == 0 ? 0 : 1;
             }
+            continue;
         }
 
-        outMap.layers.push_back(std::move(loadedLayer));
+        std::vector<int> tiles(expectedCount, -1);
+        for (int i = 0; i < expectedCount; ++i)
+        {
+            const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
+            tiles[i] = GidToLocal(gid, outMap.firstGid, outMap.atlasTileCount);
+        }
+
+        if (lowerName == "ground")
+            outMap.mapData.ground = std::move(tiles);
+        else if (lowerName == "walls")
+            outMap.mapData.walls = std::move(tiles);
+        else if (lowerName == "overhead")
+            outMap.mapData.overhead = std::move(tiles);
     }
 
     if (hasCollisionLayer)
-        outMap.collision = std::move(collisionTiles);
+        outMap.mapData.collision = std::move(collisionTiles);
     else
-        outMap.collision.assign(expectedCount, 0);
+        outMap.mapData.collision.assign(expectedCount, 0);
 
     // --- Object layer: <objectgroup name="objects">
     for (XMLElement* objectGroup = map->FirstChildElement("objectgroup"); objectGroup; objectGroup = objectGroup->NextSiblingElement("objectgroup"))
@@ -374,7 +386,10 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     std::cout << "TMX loaded: " << tmxPath << "\n";
     std::cout << "  map size: " << outMap.width << " x " << outMap.height << " tiles\n";
     std::cout << "  tile size: " << outMap.tileWidth << " x " << outMap.tileHeight << " px\n";
-    std::cout << "  layers: " << outMap.layers.size() << " (collision=" << (hasCollisionLayer ? "yes" : "no") << ")\n";
+    std::cout << "  layers: ground=" << (outMap.mapData.HasGround() ? "yes" : "no")
+              << " walls=" << (outMap.mapData.HasWalls() ? "yes" : "no")
+              << " overhead=" << (outMap.mapData.HasOverhead() ? "yes" : "no")
+              << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
     std::cout << "  objects: " << outMap.objects.size() << "\n";
     std::cout << "  animated tiles: " << outMap.animations.size() << "\n";
 
