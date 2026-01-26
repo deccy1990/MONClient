@@ -484,10 +484,10 @@ int main()
 
     TileResolver tileResolver(tilesetRuntimes);
 
-    Texture2D playerSheetTex = LoadTextureRGBA("assets/Player.png", true);
+    Texture2D playerSheetTex = LoadTextureRGBA("assets/player_sheet.png", true);
     if (!playerSheetTex.id)
     {
-        std::cerr << "Failed to load assets/Player.png\n";
+        std::cerr << "Failed to load assets/player_sheet.png\n";
         glfwTerminate();
         return -1;
     }
@@ -495,8 +495,8 @@ int main()
     SpriteSheet playerSheet(
         playerSheetTex.width,
         playerSheetTex.height,
-        64,
-        96,
+        256,
+        314,
         true);
 
 
@@ -513,8 +513,8 @@ int main()
     // Camera position is world-space top-left of viewport
     Camera2D camera({ 0.0f, 0.0f });
 
-    // Create player (fallback tile position 5,5 and sprite size 64x96)
-    Player player(playerSheetTex.id, { 5, 5 }, { 64.0f, 96.0f });
+    // Create player (fallback tile position 5,5 and sprite size 256x314)
+    Player player(playerSheetTex.id, { 5, 5 }, { 256.0f, 314.0f });
     player.SetGridPos({ 5.0f, 5.0f });
     player.SetSpriteSheet(playerSheet);
     player.SetFrame(0);
@@ -661,6 +661,17 @@ int main()
 
 
 
+    // ------------------------------------
+    // Player animation state (persistent)
+    // ------------------------------------
+    static int animRow = 0;          // 0=Down, 1=Left, 2=Right, 3=Up
+    static int animCol = 0;          // 0..3
+    static float animTimer = 0.0f;   // seconds
+    static glm::vec2 lastMoveDir(0.0f, 1.0f); // default "Down" for idle
+
+    // Persistent velocity (grid units / second)
+    static glm::vec2 vel(0.0f, 0.0f);
+
         /*
        ============================================
        Main loop
@@ -764,9 +775,6 @@ int main()
         float accel = 18.0f;
         float decel = 22.0f;
 
-        // Persistent velocity (grid units / second)
-        static glm::vec2 vel(0.0f, 0.0f);
-
         // Apply acceleration or deceleration
         if (gridDir.x != 0.0f || gridDir.y != 0.0f)
         {
@@ -788,6 +796,59 @@ int main()
                 vel = (speed > 0.0f) ? (vel / speed) * newSpeed : glm::vec2(0.0f);
             }
         }
+
+        // ------------------------------------
+        // Determine facing direction from input/movement
+        // ------------------------------------
+        bool isMoving = (glm::length(gridDir) > 0.0001f) || (glm::length(vel) > 0.0001f);
+
+        // Prefer input direction when pressed, otherwise keep last
+        glm::vec2 faceDir = gridDir;
+        if (glm::length(faceDir) > 0.0001f)
+            lastMoveDir = faceDir;
+        else
+            faceDir = lastMoveDir;
+
+        // Decide row based on dominant axis in grid space
+        // (You can tweak this later if it "feels off")
+        if (std::abs(faceDir.x) > std::abs(faceDir.y))
+        {
+            // Left / Right
+            animRow = (faceDir.x < 0.0f) ? 1 : 2;
+        }
+        else
+        {
+            // Up / Down
+            animRow = (faceDir.y < 0.0f) ? 3 : 0;
+        }
+
+        // ------------------------------------
+        // Animate (4 frames per direction)
+        // ------------------------------------
+        const float animFps = runEnabled ? 10.0f : 7.0f; // run anim faster
+        const float frameTime = 1.0f / animFps;
+
+        if (isMoving)
+        {
+            animTimer += deltaTime;
+
+            while (animTimer >= frameTime)
+            {
+                animTimer -= frameTime;
+                animCol = (animCol + 1) % 4; // 0..3
+            }
+        }
+        else
+        {
+            // Idle: reset to first frame
+            animCol = 0;
+            animTimer = 0.0f;
+        }
+
+        // Frame index in row-major order
+        // frameIndex = row * cols + col
+        int frameIndex = animRow * 4 + animCol;
+        player.SetFrame(frameIndex);
 
         // ------------------------------------
         // Collision settings (grid units)
