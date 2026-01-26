@@ -81,6 +81,28 @@ namespace
         return props;
     }
 
+    std::string GetStringProp(tinyxml2::XMLElement* props, const char* key)
+    {
+        if (!props)
+            return {};
+
+        for (auto* prop = props->FirstChildElement("property"); prop; prop = prop->NextSiblingElement("property"))
+        {
+            const char* name = prop->Attribute("name");
+            if (!name || std::string(name) != key)
+                continue;
+
+            const char* valueAttr = prop->Attribute("value");
+            if (valueAttr)
+                return valueAttr;
+
+            const char* textValue = prop->GetText();
+            return textValue ? textValue : "";
+        }
+
+        return {};
+    }
+
     bool PropertyIsTrue(const std::unordered_map<std::string, std::string>& props, const std::string& key)
     {
         auto it = props.find(key);
@@ -476,22 +498,42 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 continue;
             }
 
-            MapObject mapObject{};
-            mapObject.id = object->IntAttribute("id", 0);
-
             const char* name = object->Attribute("name");
             const char* type = object->Attribute("type");
+            const std::string typeName = type ? type : "";
+            const float x = GetFloatAttribute(object, "x", 0.0f);
+            const float y = GetFloatAttribute(object, "y", 0.0f);
+            const float w = GetFloatAttribute(object, "width", 0.0f);
+            const float h = GetFloatAttribute(object, "height", 0.0f);
+            XMLElement* props = object->FirstChildElement("properties");
+
+            if (type && typeName == "Door")
+            {
+                DoorDef door{};
+                door.posPx = { x, y };
+                door.sizePx = { w, h };
+                door.targetMap = GetStringProp(props, "targetMap");
+                door.targetSpawn = GetStringProp(props, "targetSpawn");
+                mapData.doors.push_back(std::move(door));
+                continue;
+            }
+
+            if (type && typeName == "Spawn")
+            {
+                SpawnDef spawn{};
+                spawn.name = name ? name : "";
+                spawn.posPx = { x, y };
+                mapData.spawns.push_back(std::move(spawn));
+                continue;
+            }
+
+            MapObject mapObject{};
+            mapObject.id = object->IntAttribute("id", 0);
             mapObject.name = name ? name : "";
-            mapObject.type = type ? type : "";
-
-            mapObject.positionPx = glm::vec2(
-                GetFloatAttribute(object, "x", 0.0f),
-                GetFloatAttribute(object, "y", 0.0f));
-            mapObject.sizePx = glm::vec2(
-                GetFloatAttribute(object, "width", 0.0f),
-                GetFloatAttribute(object, "height", 0.0f));
-
-            mapObject.properties = ParseProperties(object->FirstChildElement("properties"));
+            mapObject.type = typeName;
+            mapObject.positionPx = { x, y };
+            mapObject.sizePx = { w, h };
+            mapObject.properties = ParseProperties(props);
             mapData.objects.push_back(std::move(mapObject));
         }
     }

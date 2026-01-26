@@ -100,6 +100,17 @@ static glm::vec2 GridToIsoTopLeft(const glm::vec2& gridPos, float tileW, float t
     return glm::vec2(isoX, isoY) + mapOrigin;
 }
 
+static glm::vec2 SpawnPixelToGrid(const glm::vec2& posPx, int tileW, int tileH)
+{
+    return glm::vec2(posPx.x / tileW, posPx.y / tileH);
+}
+
+static bool PointInRect(const glm::vec2& p, const glm::vec2& rPos, const glm::vec2& rSize)
+{
+    return (p.x >= rPos.x && p.x <= rPos.x + rSize.x &&
+        p.y >= rPos.y && p.y <= rPos.y + rSize.y);
+}
+
 /*
     ============================================
     Shader compile/link helpers
@@ -398,10 +409,10 @@ int main()
         return -1;
     }
 
-    const int tileW = loadedMap.mapData.tileW;
-    const int tileH = loadedMap.mapData.tileH;
-    const int mapW = loadedMap.mapData.width;
-    const int mapH = loadedMap.mapData.height;
+    int tileW = loadedMap.mapData.tileW;
+    int tileH = loadedMap.mapData.tileH;
+    int mapW = loadedMap.mapData.width;
+    int mapH = loadedMap.mapData.height;
 
     /*
     ============================================
@@ -435,26 +446,39 @@ int main()
     */
     std::vector<Texture2D> tilesetTextures;
     std::vector<TilesetRuntime> tilesetRuntimes;
-    tilesetTextures.reserve(loadedMap.mapData.tilesets.size());
-    tilesetRuntimes.reserve(loadedMap.mapData.tilesets.size());
 
-    for (const TilesetDef& tilesetDef : loadedMap.mapData.tilesets)
+    auto LoadTilesetsForMap = [&](const LoadedMap& mapData) -> bool
     {
-        Texture2D texture = LoadTextureRGBA(tilesetDef.imagePath.c_str(), true);
-        if (!texture.id)
+        tilesetTextures.clear();
+        tilesetRuntimes.clear();
+        tilesetTextures.reserve(mapData.mapData.tilesets.size());
+        tilesetRuntimes.reserve(mapData.mapData.tilesets.size());
+
+        for (const TilesetDef& tilesetDef : mapData.mapData.tilesets)
         {
-            std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
-            glfwTerminate();
-            return -1;
+            Texture2D texture = LoadTextureRGBA(tilesetDef.imagePath.c_str(), true);
+            if (!texture.id)
+            {
+                std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
+                return false;
+            }
+
+            tilesetTextures.push_back(texture);
+
+            TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
+            tileset.SetAnimations(tilesetDef.animations);
+
+            TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
+            tilesetRuntimes.push_back(std::move(runtime));
         }
 
-        tilesetTextures.push_back(texture);
+        return true;
+    };
 
-        TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
-        tileset.SetAnimations(tilesetDef.animations);
-
-        TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
-        tilesetRuntimes.push_back(std::move(runtime));
+    if (!LoadTilesetsForMap(loadedMap))
+    {
+        glfwTerminate();
+        return -1;
     }
 
     TileResolver tileResolver(tilesetRuntimes);
@@ -499,25 +523,48 @@ int main()
 
     std::vector<uint8_t> collisionGrid = loadedMap.mapData.collision;
 
-    // Spawn player from object layer when available
-    for (const MapObject& object : loadedMap.mapData.objects)
+    auto SpawnPlayerFromMap = [&](const LoadedMap& mapData, const std::string& spawnName) -> bool
     {
-        std::string lowerName = object.name;
-        std::string lowerType = object.type;
-        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-        if (lowerName == "playerspawn" || lowerType == "playerspawn" || lowerName == "player" || lowerType == "player")
+        if (!mapData.mapData.spawns.empty())
         {
-            glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
-            spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
-            spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
-            player.SetGridPos(spawnGrid);
-            std::cout << "Player spawn from object id=" << object.id
-                      << " grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
-            break;
+            for (const SpawnDef& spawn : mapData.mapData.spawns)
+            {
+                if (spawnName.empty() || spawn.name == spawnName)
+                {
+                    glm::vec2 spawnGrid = SpawnPixelToGrid(spawn.posPx, tileW, tileH);
+                    spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
+                    spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
+                    player.SetGridPos(spawnGrid);
+                    std::cout << "Player spawn from named spawn '" << spawn.name
+                              << "' grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
+                    return true;
+                }
+            }
         }
-    }
+
+        for (const MapObject& object : mapData.mapData.objects)
+        {
+            std::string lowerName = object.name;
+            std::string lowerType = object.type;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+            if (lowerName == "playerspawn" || lowerType == "playerspawn" || lowerName == "player" || lowerType == "player")
+            {
+                glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
+                spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
+                spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
+                player.SetGridPos(spawnGrid);
+                std::cout << "Player spawn from object id=" << object.id
+                          << " grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    SpawnPlayerFromMap(loadedMap, "");
 
     // ------------------------------------
     // Spawn sanity check
@@ -570,6 +617,38 @@ int main()
     groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.groundGids), true, true);
     wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
     overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
+
+    auto ChangeMap = [&](const std::string& path, const std::string& spawnName) -> bool
+    {
+        LoadedMap newMap;
+        if (!LoadTmxMap(path, newMap))
+            return false;
+
+        if (!LoadTilesetsForMap(newMap))
+            return false;
+
+        loadedMap = std::move(newMap);
+        tileW = loadedMap.mapData.tileW;
+        tileH = loadedMap.mapData.tileH;
+        mapW = loadedMap.mapData.width;
+        mapH = loadedMap.mapData.height;
+
+        collisionGrid = loadedMap.mapData.collision;
+
+        groundMap = TileMap(mapW, mapH, tileW, tileH);
+        wallsMap = TileMap(mapW, mapH, tileW, tileH);
+        overheadMap = TileMap(mapW, mapH, tileW, tileH);
+
+        groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.groundGids), true, true);
+        wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
+        overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
+
+        if (!SpawnPlayerFromMap(loadedMap, spawnName))
+            player.SetGridPos({ 5.0f, 5.0f });
+
+        camera.SetPosition({ 0.0f, 0.0f });
+        return true;
+    };
 
 
 
@@ -767,6 +846,33 @@ int main()
 
         player.SetGridPos(gp);
 
+        // ------------------------------------
+        // Door trigger (press E inside door rect)
+        // ------------------------------------
+        static bool wasE = false;
+        bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+        bool ePressed = eDown && !wasE;
+        wasE = eDown;
+
+        glm::vec2 playerGrid = player.GetGridPos();
+        glm::vec2 playerPixelFeet(playerGrid.x * tileW + tileW * 0.5f,
+            playerGrid.y * tileH + tileH * 1.0f);
+
+        const DoorDef* activeDoor = nullptr;
+        for (const DoorDef& door : loadedMap.mapData.doors)
+        {
+            if (PointInRect(playerPixelFeet, door.posPx, door.sizePx))
+            {
+                activeDoor = &door;
+                break;
+            }
+        }
+
+        if (activeDoor && ePressed)
+        {
+            if (!ChangeMap(activeDoor->targetMap, activeDoor->targetSpawn))
+                std::cerr << "Failed to change map to " << activeDoor->targetMap << "\n";
+        }
 
         // ------------------------------------
         // Camera follow with dead-zone + smoothing
