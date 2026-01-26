@@ -7,10 +7,11 @@
 #include <string>
 #include <vector>
 
+#include "RenderQueue.h"
+
 class SpriteRenderer;
 class Camera2D;
 class TileResolver;
-class Player;
 
 struct TileLayer
 {
@@ -38,11 +39,22 @@ public:
     int GetTileWidthPx() const { return mTileWidthPx; }
     int GetTileHeightPx() const { return mTileHeightPx; }
 
-    void Draw(SpriteRenderer& renderer,
+    void DrawGround(SpriteRenderer& renderer,
         const TileResolver& resolver,
         const Camera2D& camera,
         const glm::ivec2& viewportSizePx,
-        const Player* player,
+        float animationTimeMs) const;
+
+    void AppendOccluders(RenderQueue& queue,
+        const TileResolver& resolver,
+        const Camera2D& camera,
+        const glm::ivec2& viewportSizePx,
+        float animationTimeMs) const;
+
+    void DrawOverhead(SpriteRenderer& renderer,
+        const TileResolver& resolver,
+        const Camera2D& camera,
+        const glm::ivec2& viewportSizePx,
         float animationTimeMs) const;
 
 private:

@@ -4,6 +4,8 @@
 
 #include <cmath>
 
+#include "RenderQueue.h"
+
 class SpriteRenderer;
 class Camera2D;
 
@@ -38,6 +40,10 @@ public:
     // Draw player using the already-computed world position of the tile (top-left of the tile sprite)
     void DrawOnTile(SpriteRenderer& renderer,
         const Camera2D& camera,
+        const glm::vec2& tileTopLeftWorldPos,
+        int tileW,
+        int tileH) const;
+    void AppendToQueue(RenderQueue& queue,
         const glm::vec2& tileTopLeftWorldPos,
         int tileW,
         int tileH) const;
