@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "MapObjects.h"
+
 struct AnimationFrame
 {
     int tileId = 0;      // 0-based tile id within the tileset
@@ -85,6 +87,8 @@ struct MapData
     std::vector<MapObjectInstance> objectInstances;
     std::vector<TileObject> tileObjects;
     std::vector<TilePropertyFlags> tileFlags;
+    std::vector<DoorDef> doors;
+    std::vector<SpawnDef> spawns;
 
     bool HasGround() const { return (int)groundGids.size() == width * height; }
     bool HasWalls() const { return (int)wallsGids.size() == width * height; }
