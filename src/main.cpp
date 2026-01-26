@@ -497,6 +497,7 @@ int main()
         playerSheetTex.height,
         256,
         314,
+        false);
         true);
 
 
