@@ -89,6 +89,15 @@ static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int hei
     glViewport(0, 0, width, height);
 }
 
+static glm::vec2 GridToIsoTopLeft(const glm::vec2& gridPos, float tileW, float tileH, const glm::vec2& mapOrigin)
+{
+    float halfW = tileW * 0.5f;
+    float halfH = tileH * 0.5f;
+    float isoX = (gridPos.x - gridPos.y) * halfW;
+    float isoY = (gridPos.x + gridPos.y) * halfH;
+    return glm::vec2(isoX, isoY) + mapOrigin;
+}
+
 /*
     ============================================
     Shader compile/link helpers
@@ -811,6 +820,20 @@ int main()
         // ------------------------------------
         groundMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
         wallsMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, &player, animationTimeMs);
+
+        glm::vec2 tileSize((float)tileW, (float)tileH);
+        for (const TileObject& tileObject : loadedMap.mapData.tileObjects)
+        {
+            ResolvedTile resolved{};
+            if (!tileResolver.Resolve(tileObject.gid, animationTimeMs, resolved))
+                continue;
+
+            glm::vec2 gridPos(tileObject.positionPx.x / tileW, (tileObject.positionPx.y / tileH) - 1.0f);
+            glm::vec2 tileTopLeft = GridToIsoTopLeft(gridPos, (float)tileW, (float)tileH, mapOrigin);
+
+            renderer.Draw(resolved.textureId, tileTopLeft, tileSize, camera, resolved.uvMin, resolved.uvMax);
+        }
+
         overheadMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
 
         glfwSwapBuffers(window);

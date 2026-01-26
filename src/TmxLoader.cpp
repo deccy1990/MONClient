@@ -352,15 +352,29 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     else
         mapData.collision.assign(expectedCount, 0);
 
-    // --- Object layer: <objectgroup name="objects">
+    // --- Object layers: <objectgroup>
     for (XMLElement* objectGroup = map->FirstChildElement("objectgroup"); objectGroup; objectGroup = objectGroup->NextSiblingElement("objectgroup"))
     {
-        const char* groupName = objectGroup->Attribute("name");
-        if (!groupName || ToLower(groupName) != "objects")
-            continue;
-
         for (XMLElement* object = objectGroup->FirstChildElement("object"); object; object = object->NextSiblingElement("object"))
         {
+            const uint32_t rawGid = static_cast<uint32_t>(object->UnsignedAttribute("gid", 0));
+            if (rawGid != 0)
+            {
+                TileObject tileObject{};
+                tileObject.gid = rawGid & TMX_GID_MASK;
+                tileObject.positionPx = glm::vec2(
+                    GetFloatAttribute(object, "x", 0.0f),
+                    GetFloatAttribute(object, "y", 0.0f));
+
+                const char* name = object->Attribute("name");
+                const char* type = object->Attribute("type");
+                tileObject.name = name ? name : "";
+                tileObject.type = type ? type : "";
+
+                mapData.tileObjects.push_back(std::move(tileObject));
+                continue;
+            }
+
             MapObject mapObject{};
             mapObject.id = object->IntAttribute("id", 0);
 
@@ -390,6 +404,7 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
               << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
               << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
     std::cout << "  objects: " << mapData.objects.size() << "\n";
+    std::cout << "  tile objects: " << mapData.tileObjects.size() << "\n";
 
     return true;
 }
