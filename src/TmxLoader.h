@@ -29,12 +29,28 @@ struct MapObject
     std::unordered_map<std::string, std::string> properties;
 };
 
+struct MapObjectInstance
+{
+    uint32_t tileIndex = 0;
+    glm::vec2 worldPos{ 0.0f, 0.0f };
+    glm::vec2 size{ 0.0f, 0.0f };
+    std::string name;
+    std::string type;
+};
+
 struct TileObject
 {
     uint32_t gid = 0;
     glm::vec2 positionPx{ 0.0f, 0.0f };
     std::string name;
     std::string type;
+};
+
+struct TilePropertyFlags
+{
+    bool blocking = false;
+    bool water = false;
+    bool slow = false;
 };
 
 struct TilesetDef
@@ -48,6 +64,7 @@ struct TilesetDef
     int imageW = 0;
     int imageH = 0;
     std::unordered_map<int, TileAnimation> animations;
+    std::unordered_map<int, TilePropertyFlags> tileFlags;
 };
 
 struct MapData
@@ -65,7 +82,9 @@ struct MapData
 
     std::vector<uint8_t> collision;
     std::vector<MapObject> objects;
+    std::vector<MapObjectInstance> objectInstances;
     std::vector<TileObject> tileObjects;
+    std::vector<TilePropertyFlags> tileFlags;
 
     bool HasGround() const { return (int)groundGids.size() == width * height; }
     bool HasWalls() const { return (int)wallsGids.size() == width * height; }

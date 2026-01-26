@@ -81,6 +81,16 @@ namespace
         return props;
     }
 
+    bool PropertyIsTrue(const std::unordered_map<std::string, std::string>& props, const std::string& key)
+    {
+        auto it = props.find(key);
+        if (it == props.end())
+            return false;
+
+        std::string value = ToLower(it->second);
+        return value == "true" || value == "1" || value == "yes";
+    }
+
     bool GetBoolAttribute(tinyxml2::XMLElement* element, const char* name, bool defaultValue)
     {
         const char* attr = element->Attribute(name);
@@ -107,6 +117,23 @@ namespace
             return defaultValue;
 
         return value;
+    }
+
+    const TilesetDef* FindTilesetForGid(const std::vector<TilesetDef>& tilesets, uint32_t gid)
+    {
+        const TilesetDef* best = nullptr;
+        int bestFirstGid = -1;
+
+        for (const TilesetDef& def : tilesets)
+        {
+            if (def.firstGid <= static_cast<int>(gid) && def.firstGid > bestFirstGid)
+            {
+                bestFirstGid = def.firstGid;
+                best = &def;
+            }
+        }
+
+        return best;
     }
 
     bool LoadTilesetFromTsx(const std::filesystem::path& tsxPath,
@@ -177,6 +204,17 @@ namespace
             const int tileId = tile->IntAttribute("id", -1);
             if (tileId < 0)
                 continue;
+
+            const auto props = ParseProperties(tile->FirstChildElement("properties"));
+            if (!props.empty())
+            {
+                TilePropertyFlags flags{};
+                flags.blocking = PropertyIsTrue(props, "blocking");
+                flags.water = PropertyIsTrue(props, "water");
+                flags.slow = PropertyIsTrue(props, "slow");
+                if (flags.blocking || flags.water || flags.slow)
+                    outDef.tileFlags[tileId] = flags;
+            }
 
             XMLElement* animation = tile->FirstChildElement("animation");
             if (!animation)
@@ -352,6 +390,41 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     else
         mapData.collision.assign(expectedCount, 0);
 
+    mapData.tileFlags.assign(expectedCount, TilePropertyFlags{});
+
+    auto AccumulateTileFlags = [&](int index, uint32_t gid)
+        {
+            if (gid == 0)
+                return;
+
+            const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
+            if (!def)
+                return;
+
+            const int localId = static_cast<int>(gid) - def->firstGid;
+            auto flagIt = def->tileFlags.find(localId);
+            if (flagIt == def->tileFlags.end())
+                return;
+
+            TilePropertyFlags& flags = mapData.tileFlags[index];
+            flags.blocking = flags.blocking || flagIt->second.blocking;
+            flags.water = flags.water || flagIt->second.water;
+            flags.slow = flags.slow || flagIt->second.slow;
+        };
+
+    for (int i = 0; i < expectedCount; ++i)
+    {
+        if ((int)mapData.groundGids.size() == expectedCount)
+            AccumulateTileFlags(i, mapData.groundGids[i]);
+        if ((int)mapData.wallsGids.size() == expectedCount)
+            AccumulateTileFlags(i, mapData.wallsGids[i]);
+        if ((int)mapData.overheadGids.size() == expectedCount)
+            AccumulateTileFlags(i, mapData.overheadGids[i]);
+
+        if (mapData.tileFlags[i].blocking)
+            mapData.collision[i] = 1;
+    }
+
     // --- Object layers: <objectgroup>
     for (XMLElement* objectGroup = map->FirstChildElement("objectgroup"); objectGroup; objectGroup = objectGroup->NextSiblingElement("objectgroup"))
     {
@@ -385,6 +458,21 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 tileObject.type = type ? type : "";
 
                 mapData.tileObjects.push_back(std::move(tileObject));
+
+                MapObjectInstance objectInstance{};
+                objectInstance.tileIndex = gid;
+                const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
+                const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
+                const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
+
+                objectInstance.size = glm::vec2(tileW, tileH);
+                objectInstance.worldPos = glm::vec2(
+                    tileObject.positionPx.x,
+                    tileObject.positionPx.y - tileH);
+                objectInstance.name = tileObject.name;
+                objectInstance.type = tileObject.type;
+
+                mapData.objectInstances.push_back(std::move(objectInstance));
                 continue;
             }
 
