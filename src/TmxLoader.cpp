@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -19,13 +20,15 @@ namespace
         return value;
     }
 
-    std::vector<int> ParseCsvTiles(const char* csvText, int expectedCount)
+    std::vector<std::uint32_t> ParseCsvTiles(const char* csvText, int expectedCount)
     {
-        std::vector<int> tiles;
+        std::vector<std::uint32_t> tiles;
         tiles.reserve(expectedCount);
 
         if (!csvText)
             return tiles;
+
+        constexpr std::uint32_t kGidMask = 0x1FFFFFFF;
 
         std::stringstream ss(csvText);
         std::string cell;
@@ -40,7 +43,8 @@ namespace
             const auto end = cell.find_last_not_of(" \t\r\n");
             const std::string trimmed = cell.substr(begin, end - begin + 1);
 
-            tiles.push_back(std::stoi(trimmed));
+            const std::uint64_t rawGid = std::stoull(trimmed);
+            tiles.push_back(static_cast<std::uint32_t>(rawGid) & kGidMask);
         }
 
         return tiles;
@@ -262,7 +266,7 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             continue;
         }
 
-        std::vector<int> rawGids = ParseCsvTiles(data->GetText(), expectedCount);
+        std::vector<std::uint32_t> rawGids = ParseCsvTiles(data->GetText(), expectedCount);
         if ((int)rawGids.size() != expectedCount)
         {
             std::cerr << "Layer '" << loadedLayer.name << "' size mismatch. Expected "
@@ -274,14 +278,20 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
 
         for (int i = 0; i < expectedCount; ++i)
         {
-            const int gid = rawGids[i];
-            if (gid <= 0)
+            const std::uint32_t gid = rawGids[i];
+            if (gid == 0)
             {
                 loadedLayer.tiles[i] = -1;
                 continue;
             }
 
-            loadedLayer.tiles[i] = gid - outMap.firstGid;
+            if (gid < static_cast<std::uint32_t>(outMap.firstGid))
+            {
+                loadedLayer.tiles[i] = -1;
+                continue;
+            }
+
+            loadedLayer.tiles[i] = static_cast<int>(gid) - outMap.firstGid;
         }
 
         if (loadedLayer.isCollision)
