@@ -361,15 +361,10 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             // Read it in a version-compatible way (TinyXML2 differs by version).
             uint32_t rawGid = 0;
 
-            if (object->Attribute("gid"))
+            if (const char* gidStr = object->Attribute("gid"))
             {
-                // Option A: QueryUnsignedAttribute is widely supported
-                unsigned int tmp = 0;
-                object->QueryUnsignedAttribute("gid", &tmp);
-                rawGid = static_cast<uint32_t>(tmp);
-
-                // If you ever expect very large gids, you can switch to QueryUnsigned64Attribute,
-                // but most maps won't exceed 32-bit.
+                // TMX stores gid as decimal text.
+                rawGid = static_cast<uint32_t>(std::strtoul(gidStr, nullptr, 10));
             }
 
             // Mask off flip flags (Tiled uses high bits for flipping)
