@@ -819,19 +819,56 @@ int main()
         // Draw world
         // ------------------------------------
         groundMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
-        wallsMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, &player, animationTimeMs);
+        wallsMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
 
-        glm::vec2 tileSize((float)tileW, (float)tileH);
-        for (const TileObject& tileObject : loadedMap.mapData.tileObjects)
+        struct DepthDrawEntry
         {
+            float feetY = 0.0f;
+            size_t index = 0;
+            bool isPlayer = false;
+        };
+
+        std::vector<DepthDrawEntry> depthEntries;
+        depthEntries.reserve(loadedMap.mapData.objectInstances.size() + 1);
+
+        for (size_t i = 0; i < loadedMap.mapData.objectInstances.size(); ++i)
+        {
+            const MapObjectInstance& instance = loadedMap.mapData.objectInstances[i];
+            DepthDrawEntry entry{};
+            entry.index = i;
+            entry.isPlayer = false;
+            entry.feetY = mapOrigin.y + instance.worldPos.y + instance.size.y;
+            depthEntries.push_back(entry);
+        }
+
+        glm::vec2 playerTileTopLeft = GridToIsoTopLeft(player.GetGridPos(), (float)tileW, (float)tileH, mapOrigin);
+        DepthDrawEntry playerEntry{};
+        playerEntry.index = 0;
+        playerEntry.isPlayer = true;
+        playerEntry.feetY = playerTileTopLeft.y + tileH;
+        depthEntries.push_back(playerEntry);
+
+        std::stable_sort(depthEntries.begin(), depthEntries.end(),
+            [](const DepthDrawEntry& a, const DepthDrawEntry& b)
+            {
+                return a.feetY < b.feetY;
+            });
+
+        for (const DepthDrawEntry& entry : depthEntries)
+        {
+            if (entry.isPlayer)
+            {
+                player.DrawOnTile(renderer, camera, playerTileTopLeft, tileW, tileH);
+                continue;
+            }
+
+            const MapObjectInstance& instance = loadedMap.mapData.objectInstances[entry.index];
             ResolvedTile resolved{};
-            if (!tileResolver.Resolve(tileObject.gid, animationTimeMs, resolved))
+            if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            glm::vec2 gridPos(tileObject.positionPx.x / tileW, (tileObject.positionPx.y / tileH) - 1.0f);
-            glm::vec2 tileTopLeft = GridToIsoTopLeft(gridPos, (float)tileW, (float)tileH, mapOrigin);
-
-            renderer.Draw(resolved.textureId, tileTopLeft, tileSize, camera, resolved.uvMin, resolved.uvMax);
+            glm::vec2 drawPos = mapOrigin + instance.worldPos;
+            renderer.Draw(resolved.textureId, drawPos, instance.size, camera, resolved.uvMin, resolved.uvMax);
         }
 
         overheadMap.Draw(renderer, tileResolver, camera, { fbW, fbH }, nullptr, animationTimeMs);
