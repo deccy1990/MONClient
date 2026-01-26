@@ -25,7 +25,10 @@ void Player::DrawOnTile(SpriteRenderer& renderer,
     playerTopLeft.x = feetWorld.x - (mSizePx.x * 0.5f) + feetPixelOffset.x;
     playerTopLeft.y = feetWorld.y - mSizePx.y + feetPixelOffset.y;
 
-    renderer.Draw(mTexture, playerTopLeft, mSizePx, camera);
+    glm::vec2 uvMin;
+    glm::vec2 uvMax;
+    mSheet.GetUV(mFrame, uvMin, uvMax);
+    renderer.Draw(mTexture, playerTopLeft, mSizePx, camera, uvMin, uvMax);
 }
 
 void Player::AppendToQueue(RenderQueue& queue,
@@ -43,8 +46,7 @@ void Player::AppendToQueue(RenderQueue& queue,
     cmd.texture = mTexture;
     cmd.posPx = playerTopLeft;
     cmd.sizePx = mSizePx;
-    cmd.uvMin = { 0.0f, 0.0f };
-    cmd.uvMax = { 1.0f, 1.0f };
+    mSheet.GetUV(mFrame, cmd.uvMin, cmd.uvMax);
     cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
 
     queue.Push(cmd);

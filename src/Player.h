@@ -5,6 +5,7 @@
 #include <cmath>
 
 #include "RenderQueue.h"
+#include "SpriteSheet.h"
 
 class SpriteRenderer;
 class Camera2D;
@@ -54,11 +55,16 @@ public:
         return tileTopLeftWorldPos + glm::vec2(tileW * 0.5f, (float)tileH);
     }
 
+    void SetSpriteSheet(const SpriteSheet& sheet) { mSheet = sheet; }
+    void SetFrame(int frame) { mFrame = frame; }
+    int GetFrame() const { return mFrame; }
 
 private:
     GLuint mTexture = 0;
     glm::ivec2 mTilePos{ 0, 0 };
     glm::vec2 mSizePx{ 64.0f, 96.0f }; // typical sprite size (taller than tile)
     glm::vec2 mGridPos{ 0.0f, 0.0f };
+    SpriteSheet mSheet{};
+    int mFrame = 0; // which frame index to draw
 
 };
