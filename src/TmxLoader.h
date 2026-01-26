@@ -29,6 +29,14 @@ struct MapObject
     std::unordered_map<std::string, std::string> properties;
 };
 
+struct TileObject
+{
+    uint32_t gid = 0;
+    glm::vec2 positionPx{ 0.0f, 0.0f };
+    std::string name;
+    std::string type;
+};
+
 struct TilesetDef
 {
     int firstGid = 1;
@@ -57,6 +65,7 @@ struct MapData
 
     std::vector<uint8_t> collision;
     std::vector<MapObject> objects;
+    std::vector<TileObject> tileObjects;
 
     bool HasGround() const { return (int)groundGids.size() == width * height; }
     bool HasWalls() const { return (int)wallsGids.size() == width * height; }
