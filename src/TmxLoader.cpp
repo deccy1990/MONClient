@@ -357,11 +357,29 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     {
         for (XMLElement* object = objectGroup->FirstChildElement("object"); object; object = object->NextSiblingElement("object"))
         {
-            const uint32_t rawGid = static_cast<uint32_t>(object->UnsignedAttribute("gid", 0));
-            if (rawGid != 0)
+            // TMX tile-object gid may contain flip flags in the high bits.
+            // Read it in a version-compatible way (TinyXML2 differs by version).
+            uint32_t rawGid = 0;
+
+            if (object->Attribute("gid"))
+            {
+                // Option A: QueryUnsignedAttribute is widely supported
+                unsigned int tmp = 0;
+                object->QueryUnsignedAttribute("gid", &tmp);
+                rawGid = static_cast<uint32_t>(tmp);
+
+                // If you ever expect very large gids, you can switch to QueryUnsigned64Attribute,
+                // but most maps won't exceed 32-bit.
+            }
+
+            // Mask off flip flags (Tiled uses high bits for flipping)
+            static constexpr uint32_t TMX_GID_MASK = 0x1FFFFFFF;
+            uint32_t gid = rawGid & TMX_GID_MASK;
+
+            if (gid != 0)
             {
                 TileObject tileObject{};
-                tileObject.gid = rawGid & TMX_GID_MASK;
+                tileObject.gid = gid;
                 tileObject.positionPx = glm::vec2(
                     GetFloatAttribute(object, "x", 0.0f),
                     GetFloatAttribute(object, "y", 0.0f));
