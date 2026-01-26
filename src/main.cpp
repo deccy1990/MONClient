@@ -442,7 +442,7 @@ int main()
     Required files:
     - tileset images referenced by the TMX/TSX
     - assets/test.png    (optional sprite test)
-	- assets/player.png  (player sprite)
+	- assets/Player.png or assets/player_sheet.png  (player sprite)
 	- assets/collision.png (collision debug view)
     */
     std::vector<Texture2D> tilesetTextures;
@@ -484,10 +484,16 @@ int main()
 
     TileResolver tileResolver(tilesetRuntimes);
 
-    Texture2D playerSheetTex = LoadTextureRGBA("assets/player_sheet.png", true);
+    const char* playerSpritePath = "assets/Player.png";
+    Texture2D playerSheetTex = LoadTextureRGBA(playerSpritePath, true);
     if (!playerSheetTex.id)
     {
-        std::cerr << "Failed to load assets/player_sheet.png\n";
+        playerSpritePath = "assets/player_sheet.png";
+        playerSheetTex = LoadTextureRGBA(playerSpritePath, true);
+    }
+    if (!playerSheetTex.id)
+    {
+        std::cerr << "Failed to load " << playerSpritePath << "\n";
         glfwTerminate();
         return -1;
     }
@@ -498,7 +504,6 @@ int main()
         256,
         314,
         false);
-        true);
 
 
     /*
