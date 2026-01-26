@@ -15,6 +15,7 @@
 #include "TileSet.h"
 #include "TileMath.h"
 #include "Player.h"
+#include "SpriteSheet.h"
 #include "TmxLoader.h"
 #include <algorithm>
 #include <cctype>
@@ -483,14 +484,20 @@ int main()
 
     TileResolver tileResolver(tilesetRuntimes);
 
-    Texture2D playerTex = LoadTextureRGBA("assets/player.png", false);
-    if (!playerTex.id)
+    Texture2D playerSheetTex = LoadTextureRGBA("assets/Player.png", true);
+    if (!playerSheetTex.id)
     {
-        std::cerr << "Failed to load assets/player.png\n";
+        std::cerr << "Failed to load assets/Player.png\n";
         glfwTerminate();
         return -1;
     }
 
+    SpriteSheet playerSheet(
+        playerSheetTex.width,
+        playerSheetTex.height,
+        64,
+        96,
+        true);
 
 
     /*
@@ -507,8 +514,10 @@ int main()
     Camera2D camera({ 0.0f, 0.0f });
 
     // Create player (fallback tile position 5,5 and sprite size 64x96)
-    Player player(playerTex.id, { 5, 5 }, { 64.0f, 96.0f });
+    Player player(playerSheetTex.id, { 5, 5 }, { 64.0f, 96.0f });
     player.SetGridPos({ 5.0f, 5.0f });
+    player.SetSpriteSheet(playerSheet);
+    player.SetFrame(0);
 
 
    /*
