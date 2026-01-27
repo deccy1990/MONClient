@@ -15,6 +15,7 @@
 #include "TileSet.h"
 #include "TileMath.h"
 #include "Player.h"
+#include "PlayerController.h"
 #include "SpriteSheet.h"
 #include "TmxLoader.h"
 #include <algorithm>
@@ -363,12 +364,6 @@ static bool DebugLoadTMX(const char* tmxPath)
 
 int main()
 {
-    // ------------------------------------
-    // Persistent run toggle state
-    // ------------------------------------
-    static bool runEnabled = false;
-    static bool wasCtrlDown = false;
-
     /*
     ============================================
     GLFW + window
@@ -525,6 +520,7 @@ int main()
     player.SetGridPos({ 5.0f, 5.0f });
     player.SetSpriteSheet(playerSheet);
     player.SetFrame(0);
+    PlayerController playerController(player);
 
 
    /*
@@ -537,7 +533,7 @@ int main()
         std::cout << "tileset[0] size: " << tilesetTextures.front().width << " x " << tilesetTextures.front().height << "\n";
 
 
-    std::vector<uint8_t> collisionGrid = loadedMap.mapData.collision;
+    std::vector<int> collisionGrid(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
     auto SpawnPlayerFromMap = [&](const LoadedMap& mapData, const std::string& spawnName) -> bool
     {
@@ -649,7 +645,7 @@ int main()
         mapW = loadedMap.mapData.width;
         mapH = loadedMap.mapData.height;
 
-        collisionGrid = loadedMap.mapData.collision;
+        collisionGrid.assign(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
         groundMap = TileMap(mapW, mapH, tileW, tileH);
         wallsMap = TileMap(mapW, mapH, tileW, tileH);
@@ -676,18 +672,6 @@ int main()
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
-
-        // ------------------------------------
-        // Run toggle (Ctrl) - toggles runEnabled on/off
-        // ------------------------------------
-        bool ctrlDown =
-            (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
-            (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
-
-        if (ctrlDown && !wasCtrlDown)
-            runEnabled = !runEnabled;
-        wasCtrlDown = ctrlDown;
-
 
         // ------------------------------------
         // deltaTime (real)
@@ -1044,6 +1028,8 @@ int main()
             if (!ChangeMap(activeDoor->targetMap, activeDoor->targetSpawn))
                 std::cerr << "Failed to change map to " << activeDoor->targetMap << "\n";
         }
+
+        glm::vec2 pos = player.GetGridPos();
 
         // ------------------------------------
         // Camera follow with dead-zone + smoothing
