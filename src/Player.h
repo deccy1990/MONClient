@@ -40,6 +40,7 @@ public:
     bool isRunning = false;
     glm::vec2 visualOffsetPx{ 0.0f, 0.0f };
     glm::vec2 moveVec{ 0.0f, 0.0f };
+    float interactRadius = 0.45f; // tiles
     float verticalVisualOffset = 0.0f;
     int animFrame = 0;      // 0..3
     float animTimer = 0.0f; // seconds
