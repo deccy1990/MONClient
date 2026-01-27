@@ -363,6 +363,12 @@ static bool DebugLoadTMX(const char* tmxPath)
 
 int main()
 {
+    // ------------------------------------
+    // Persistent run toggle state
+    // ------------------------------------
+    static bool runEnabled = false;
+    static bool wasCtrlDown = false;
+
     /*
     ============================================
     GLFW + window
@@ -677,26 +683,13 @@ int main()
         // ------------------------------------
         // Run toggle (Ctrl) - toggles runEnabled on/off
         // ------------------------------------
-        static bool runEnabled = false;
-        static bool wasCtrlDown = false;
-
         bool ctrlDown =
             (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
             (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
         if (ctrlDown && !wasCtrlDown)
-        {
             runEnabled = !runEnabled;
-            if (player.isMoving)
-                player.runKickTimer = 0.10f;
-        }
-
-            if (player.isMoving)
-            {
-                player.animTimer = 0.0f;
-                player.animFrame = 0;
-            }
-        }
+        wasCtrlDown = ctrlDown;
 
 
         // ------------------------------------
