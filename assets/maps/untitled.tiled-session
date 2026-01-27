@@ -1,5 +1,5 @@
 {
-    "activeFile": "testmap.tmx",
+    "activeFile": "",
     "expandedProjectPaths": [
         "."
     ],
@@ -41,8 +41,8 @@
             "scale": 0.5,
             "selectedLayer": 1,
             "viewCenter": {
-                "x": 1854,
-                "y": 990
+                "x": 2186,
+                "y": 1024
             }
         },
         "tiles.tsx": {
@@ -53,7 +53,6 @@
         }
     },
     "openFiles": [
-        "testmap.tmx"
     ],
     "project": "untitled.tiled-project",
     "recentFiles": [

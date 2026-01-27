@@ -485,10 +485,10 @@ int main()
 
     TileResolver tileResolver(tilesetRuntimes);
 
-    Texture2D playerSheetTex = LoadTextureRGBA("assets/player_sheet.png", false);
+    Texture2D playerSheetTex = LoadTextureRGBA("assets/Playersprite/player_sheet.png", false);
     if (!playerSheetTex.id)
     {
-        std::cerr << "Failed to load assets/player_sheet.png\n";
+        std::cerr << "Failed to load assets/Playersprite/player_sheet.png\n";
         glfwTerminate();
         return -1;
     }

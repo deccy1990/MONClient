@@ -1,0 +1,52 @@
+{
+    "Map/SizeTest": {
+        "height": 4300,
+        "width": 2
+    },
+    "activeFile": "StarterZone.tmx",
+    "expandedProjectPaths": [
+    ],
+    "file.lastUsedOpenFilter": "All Files (*)",
+    "fileStates": {
+        "": {
+            "scaleInDock": 1
+        },
+        "#Floor_Grass_01": {
+            "scaleInEditor": 1
+        },
+        "StarterZone.tmx": {
+            "scale": 0.926806640625,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 1023.9460513144724,
+                "y": 320.4551920341395
+            }
+        },
+        "StarterZone.tmx#Grass_11-128x128": {
+            "scaleInDock": 1
+        },
+        "StarterZone.tmx#Grass_13-128x128": {
+            "scaleInDock": 1
+        },
+        "StarterZone.tmx#Grass_20": {
+            "scaleInDock": 1
+        }
+    },
+    "last.imagePath": "E:/MONClient/assets/Tiles/SBS_-_Tiny_Texture_Pack_1_-_128x128/128x128/Grass",
+    "map.lastUsedFormat": "tmx",
+    "map.tileWidth": 64,
+    "map.width": 32,
+    "openFiles": [
+        "StarterZone.tmx"
+    ],
+    "project": "MON-MAPS-project.tiled-project",
+    "recentFiles": [
+        "StarterZone.tmx"
+    ],
+    "tileset.embedInMap": true,
+    "tileset.tileSize": {
+        "height": 32,
+        "width": 64
+    },
+    "tileset.useTransparentColor": false
+}
