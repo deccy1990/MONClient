@@ -893,6 +893,26 @@ int main()
                 return false;
             };
 
+        [[maybe_unused]] auto IsWithinInteractRange = [&](const glm::vec2& targetTile) -> bool
+            {
+                glm::vec2 delta = targetTile - player.GetGridPos();
+                return glm::length(delta) <= player.interactRadius;
+            };
+
+        [[maybe_unused]] auto IsFacingTarget = [&](const glm::vec2& target) -> bool
+            {
+                glm::vec2 dir = target - player.GetGridPos();
+
+                switch (player.facing)
+                {
+                case Player::FacingDir::Up: return dir.y < 0.0f;
+                case Player::FacingDir::Down: return dir.y > 0.0f;
+                case Player::FacingDir::Left: return dir.x < 0.0f;
+                case Player::FacingDir::Right: return dir.x > 0.0f;
+                }
+                return false;
+            };
+
 
 
 
@@ -901,6 +921,8 @@ int main()
         // ------------------------------------
         glm::vec2 desiredMove = player.moveVec * moveSpeed * deltaTime;
         glm::vec2 pos = player.GetGridPos();
+        bool xBlocked = false;
+        bool yBlocked = false;
 
         // --- X axis ---
         if (desiredMove.x != 0.0f)
@@ -910,6 +932,8 @@ int main()
 
             if (!CollidesAt(testPos))
                 pos.x = testPos.x;
+            else
+                xBlocked = true;
         }
 
         // --- Y axis ---
@@ -920,6 +944,43 @@ int main()
 
             if (!CollidesAt(testPos))
                 pos.y = testPos.y;
+            else
+                yBlocked = true;
+        }
+
+        // ------------------------------------
+        // Corner forgiveness (small nudge)
+        // ------------------------------------
+        if (player.isMoving)
+        {
+            const float nudge = 0.03f; // tile units (small!)
+
+            bool diagonal =
+                std::abs(player.moveVec.x) > 0.1f &&
+                std::abs(player.moveVec.y) > 0.1f;
+
+            if (diagonal)
+            {
+                // Try nudging X if X was blocked
+                if (xBlocked && !yBlocked)
+                {
+                    glm::vec2 testX = pos;
+                    testX.x += (player.moveVec.x > 0.0f ? nudge : -nudge);
+
+                    if (!CollidesAt(testX))
+                        pos.x = testX.x;
+                }
+
+                // Try nudging Y if Y was blocked
+                if (yBlocked && !xBlocked)
+                {
+                    glm::vec2 testY = pos;
+                    testY.y += (player.moveVec.y > 0.0f ? nudge : -nudge);
+
+                    if (!CollidesAt(testY))
+                        pos.y = testY.y;
+                }
+            }
         }
 
         // Clamp within map bounds
