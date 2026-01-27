@@ -36,8 +36,11 @@ public:
 
     FacingDir facing = FacingDir::Down;
     bool isMoving = false;
+    bool wasMoving = false;
     bool isRunning = false;
     glm::vec2 moveVec{ 0.0f, 0.0f };
+    int animFrame = 0;      // 0..3
+    float animTimer = 0.0f; // seconds
 
     Player(GLuint texture, const glm::ivec2& tilePos, const glm::vec2& sizePx)
         : mTexture(texture), mTilePos(tilePos), mSizePx(sizePx) {
