@@ -685,7 +685,11 @@ int main()
             (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
         if (ctrlDown && !wasCtrlDown)
+        {
             runEnabled = !runEnabled;
+            if (player.isMoving)
+                player.runKickTimer = 0.10f;
+        }
 
         wasCtrlDown = ctrlDown;
 
@@ -767,6 +771,17 @@ int main()
         player.isMoving = newMoving;
         player.wasMoving = newMoving;
         player.isRunning = runEnabled && player.isMoving;
+
+        // Visual lean (pixels). Tune these.
+        const float walkLean = 1.5f;
+        const float runLean = 2.5f;
+
+        glm::vec2 nd = intentDir;
+        if (nd.x != 0.0f || nd.y != 0.0f)
+            nd = glm::normalize(nd);
+
+        float lean = player.isRunning ? runLean : walkLean;
+        player.visualOffsetPx = player.isMoving ? (nd * lean) : glm::vec2(0.0f);
 
         // Update facing based on screen intent
         if (newMoving)
@@ -850,6 +865,30 @@ int main()
             // Idle: reset to first frame
             player.animFrame = 0;
             player.animTimer = 0.0f;
+        }
+
+        // Bobbing: use animFrame as a simple step wave.
+        // Frames 0..3 -> [-1, 0, +1, 0] style bob.
+        float bobAmp = player.isRunning ? 1.6f : 1.0f; // pixels
+
+        float bob = 0.0f;
+        switch (player.animFrame)
+        {
+        case 0: bob = -0.5f; break;
+        case 1: bob = 0.0f; break;
+        case 2: bob = 0.5f; break;
+        case 3: bob = 0.0f; break;
+        }
+        if (!player.isMoving) bob = 0.0f;
+
+        player.visualOffsetPx.y += bob * bobAmp;
+
+        player.runKickTimer = std::max(0.0f, player.runKickTimer - deltaTime);
+        if (player.runKickTimer > 0.0f && player.isMoving)
+        {
+            float t = player.runKickTimer / 0.10f; // 1 -> 0
+            // extra lean forward, fades out
+            player.visualOffsetPx += nd * (t * 1.5f);
         }
 
         // Frame index in row-major order
