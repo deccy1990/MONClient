@@ -668,9 +668,6 @@ int main()
 
 
 
-    // Persistent velocity (grid units / second)
-    static glm::vec2 vel(0.0f, 0.0f);
-
         /*
        ============================================
        Main loop
@@ -719,13 +716,11 @@ int main()
         glClear(GL_COLOR_BUFFER_BIT);
 
         // ------------------------------------
-        // Movement speed (stored for later smooth movement + stamina)
-        // NOTE: tile-step movement doesnt use moveSpeed yet; we will in the next step.
+        // Movement speed in tiles per second.
         // ------------------------------------
-        float walkSpeed = 120.0f;
-        float runSpeed = 200.0f;
-        float moveSpeed = runEnabled ? runSpeed : walkSpeed;
-        (void)moveSpeed; // suppress unused warning for now
+        float walkTilesPerSec = 3.0f;
+        float runTilesPerSec = 5.0f;
+        float moveSpeed = runEnabled ? runTilesPerSec : walkTilesPerSec;
 
         // ------------------------------------
         // Smooth player movement (hold WASD)
@@ -750,7 +745,6 @@ int main()
         if (screenDir.x != 0.0f || screenDir.y != 0.0f)
             screenDir = glm::normalize(screenDir);
 
-        player.moveVec = screenDir;
         bool newMoving = (intentDir.x != 0.0f || intentDir.y != 0.0f);
 
         if (newMoving && !player.wasMoving)
@@ -802,44 +796,10 @@ int main()
         glm::vec2 gridDir = screenDir.x * glm::vec2(1.0f, -1.0f) +
             screenDir.y * glm::vec2(1.0f, 1.0f);
 
-        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
-            gridDir = glm::normalize(gridDir);
-
-
         // Normalize so diagonal isnt faster
         if (gridDir.x != 0.0f || gridDir.y != 0.0f)
             gridDir = glm::normalize(gridDir);
-
-        // Speed in tiles per second (tune to taste)
-        float walkTilesPerSec = 3.0f;
-        float runTilesPerSec = 5.0f;
-        float maxSpeed = runEnabled ? runTilesPerSec : walkTilesPerSec;
-
-        // Acceleration/deceleration in tiles/sec^2
-        float accel = 18.0f;
-        float decel = 22.0f;
-
-        // Apply acceleration or deceleration
-        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
-        {
-            vel += gridDir * accel * deltaTime;
-
-            // Clamp to max speed
-            float speed = glm::length(vel);
-            if (speed > maxSpeed)
-                vel = (vel / speed) * maxSpeed;
-        }
-        else
-        {
-            // Decelerate toward zero when no input
-            float speed = glm::length(vel);
-            if (speed > 0.0f)
-            {
-                float drop = decel * deltaTime;
-                float newSpeed = std::max(0.0f, speed - drop);
-                vel = (speed > 0.0f) ? (vel / speed) * newSpeed : glm::vec2(0.0f);
-            }
-        }
+        player.moveVec = gridDir;
 
         // ------------------------------------
         // Animate (4 frames per direction)
@@ -939,27 +899,62 @@ int main()
         // ------------------------------------
         // Integrate movement with hitbox collision (slide along walls)
         // ------------------------------------
-        glm::vec2 gp = player.GetGridPos();
+        glm::vec2 desiredMove = player.moveVec * moveSpeed * deltaTime;
+        glm::vec2 pos = player.GetGridPos();
 
-        // X
-        glm::vec2 tryX = gp;
-        tryX.x += vel.x * deltaTime;
+        // --- X axis ---
+        if (desiredMove.x != 0.0f)
+        {
+            glm::vec2 testPos = pos;
+            testPos.x += desiredMove.x;
 
-        if (!CollidesAt(tryX)) gp.x = tryX.x;
-        else vel.x = 0.0f;
+            if (!CollidesAt(testPos))
+                pos.x = testPos.x;
+        }
 
-        // Y
-        glm::vec2 tryY = gp;
-        tryY.y += vel.y * deltaTime;
+        // --- Y axis ---
+        if (desiredMove.y != 0.0f)
+        {
+            glm::vec2 testPos = pos;
+            testPos.y += desiredMove.y;
 
-        if (!CollidesAt(tryY)) gp.y = tryY.y;
-        else vel.y = 0.0f;
+            if (!CollidesAt(testPos))
+                pos.y = testPos.y;
+        }
 
         // Clamp within map bounds
-        gp.x = std::clamp(gp.x, 0.0f, (float)(mapW - 1));
-        gp.y = std::clamp(gp.y, 0.0f, (float)(mapH - 1));
+        pos.x = std::clamp(pos.x, 0.0f, (float)(mapW - 1));
+        pos.y = std::clamp(pos.y, 0.0f, (float)(mapH - 1));
 
-        player.SetGridPos(gp);
+        auto SnapAxis = [](float& v)
+            {
+                float center = std::round(v - 0.5f) + 0.5f;
+                float dist = v - center;
+
+                if (std::abs(dist) < 0.02f)
+                    v = center;
+            };
+
+        if (player.isMoving)
+        {
+            // Snap only on the axis NOT being moved
+            if (std::abs(player.moveVec.x) > std::abs(player.moveVec.y))
+                SnapAxis(pos.y);
+            else
+                SnapAxis(pos.x);
+        }
+
+        player.SetGridPos(pos);
+
+        float targetOffset = 0.0f;
+
+        if (player.isMoving && player.moveVec.y > 0.2f)
+            targetOffset = 1.0f;
+
+        if (player.isMoving && player.moveVec.y < -0.2f)
+            targetOffset = -1.0f;
+
+        player.verticalVisualOffset += (targetOffset - player.verticalVisualOffset) * 12.0f * deltaTime;
 
         // ------------------------------------
         // Door trigger (press E inside door rect)
@@ -996,8 +991,8 @@ int main()
         const float halfH = tileH * 0.5f;
 
         // Player iso tile top-left (world)
-        float isoX = (gp.x - gp.y) * halfW;
-        float isoY = (gp.x + gp.y) * halfH;
+        float isoX = (pos.x - pos.y) * halfW;
+        float isoY = (pos.x + pos.y) * halfH;
 
         // Must match TileMap.cpp origin
         glm::vec2 mapOrigin(fbW * 0.5f, 60.0f);
