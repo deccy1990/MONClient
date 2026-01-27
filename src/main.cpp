@@ -665,10 +665,17 @@ int main()
     // ------------------------------------
     // Player animation state (persistent)
     // ------------------------------------
-    static int animRow = 0;          // 0=Down, 1=Left, 2=Right, 3=Up
-    static int animCol = 0;          // 0..3
+    enum class Facing
+    {
+        Down = 0,
+        Left = 1,
+        Right = 2,
+        Up = 3
+    };
+
+    static Facing facing = Facing::Down;
     static float animTimer = 0.0f;   // seconds
-    static glm::vec2 lastMoveDir(0.0f, 1.0f); // default "Down" for idle
+    static int animFrame = 0;        // 0..3
 
     // Persistent velocity (grid units / second)
     static glm::vec2 vel(0.0f, 0.0f);
@@ -750,6 +757,16 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
+        // Update facing based on screen intent
+        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
+        {
+            // Pick dominant axis (prevents diagonal flicker)
+            if (std::abs(screenDir.x) > std::abs(screenDir.y))
+                facing = (screenDir.x > 0.0f) ? Facing::Right : Facing::Left;
+            else
+                facing = (screenDir.y > 0.0f) ? Facing::Down : Facing::Up;
+        }
+
         if (screenDir.x != 0.0f || screenDir.y != 0.0f)
             screenDir = glm::normalize(screenDir);
 
@@ -801,27 +818,8 @@ int main()
         // ------------------------------------
         // Determine facing direction from input/movement
         // ------------------------------------
-        bool isMoving = (glm::length(gridDir) > 0.0001f) || (glm::length(vel) > 0.0001f);
-
-        // Prefer input direction when pressed, otherwise keep last
-        glm::vec2 faceDir = gridDir;
-        if (glm::length(faceDir) > 0.0001f)
-            lastMoveDir = faceDir;
-        else
-            faceDir = lastMoveDir;
-
-        // Decide row based on dominant axis in grid space
-        // (You can tweak this later if it "feels off")
-        if (std::abs(faceDir.x) > std::abs(faceDir.y))
-        {
-            // Left / Right
-            animRow = (faceDir.x < 0.0f) ? 1 : 2;
-        }
-        else
-        {
-            // Up / Down
-            animRow = (faceDir.y < 0.0f) ? 3 : 0;
-        }
+        bool isMoving = (glm::length(vel) > 0.0001f) ||
+            (screenDir.x != 0.0f || screenDir.y != 0.0f);
 
         // ------------------------------------
         // Animate (4 frames per direction)
@@ -836,19 +834,19 @@ int main()
             while (animTimer >= frameTime)
             {
                 animTimer -= frameTime;
-                animCol = (animCol + 1) % 4; // 0..3
+                animFrame = (animFrame + 1) % 4; // 0..3
             }
         }
         else
         {
             // Idle: reset to first frame
-            animCol = 0;
+            animFrame = 0;
             animTimer = 0.0f;
         }
 
         // Frame index in row-major order
         // frameIndex = row * cols + col
-        int frameIndex = animRow * 4 + animCol;
+        int frameIndex = static_cast<int>(facing) * 4 + animFrame;
         player.SetFrame(frameIndex);
 
         // ------------------------------------
