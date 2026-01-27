@@ -15,6 +15,7 @@
 #include "TileSet.h"
 #include "TileMath.h"
 #include "Player.h"
+#include "PlayerController.h"
 #include "SpriteSheet.h"
 #include "TmxLoader.h"
 #include <algorithm>
@@ -363,12 +364,6 @@ static bool DebugLoadTMX(const char* tmxPath)
 
 int main()
 {
-    // ------------------------------------
-    // Persistent run toggle state
-    // ------------------------------------
-    static bool runEnabled = false;
-    static bool wasCtrlDown = false;
-
     /*
     ============================================
     GLFW + window
@@ -525,6 +520,7 @@ int main()
     player.SetGridPos({ 5.0f, 5.0f });
     player.SetSpriteSheet(playerSheet);
     player.SetFrame(0);
+    PlayerController playerController(player);
 
 
    /*
@@ -537,7 +533,7 @@ int main()
         std::cout << "tileset[0] size: " << tilesetTextures.front().width << " x " << tilesetTextures.front().height << "\n";
 
 
-    std::vector<uint8_t> collisionGrid = loadedMap.mapData.collision;
+    std::vector<int> collisionGrid(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
     auto SpawnPlayerFromMap = [&](const LoadedMap& mapData, const std::string& spawnName) -> bool
     {
@@ -649,7 +645,7 @@ int main()
         mapW = loadedMap.mapData.width;
         mapH = loadedMap.mapData.height;
 
-        collisionGrid = loadedMap.mapData.collision;
+        collisionGrid.assign(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
         groundMap = TileMap(mapW, mapH, tileW, tileH);
         wallsMap = TileMap(mapW, mapH, tileW, tileH);
@@ -678,18 +674,6 @@ int main()
         glfwPollEvents();
 
         // ------------------------------------
-        // Run toggle (Ctrl) - toggles runEnabled on/off
-        // ------------------------------------
-        bool ctrlDown =
-            (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS) ||
-            (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
-
-        if (ctrlDown && !wasCtrlDown)
-            runEnabled = !runEnabled;
-        wasCtrlDown = ctrlDown;
-
-
-        // ------------------------------------
         // deltaTime (real)
         // ------------------------------------
         static double lastTime = glfwGetTime();
@@ -715,246 +699,7 @@ int main()
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        // ------------------------------------
-        // Movement speed in tiles per second.
-        // ------------------------------------
-        float walkTilesPerSec = 3.0f;
-        float runTilesPerSec = 5.0f;
-        float moveSpeed = runEnabled ? runTilesPerSec : walkTilesPerSec;
-
-        // ------------------------------------
-        // Smooth player movement (hold WASD)
-        // ------------------------------------
-        // We move in *grid space* (tile coordinates as floats), then convert to iso for rendering.
-        // This gives smooth movement while keeping the logic tile-friendly (for collision later).
-
-        // ------------------------------------
-        // Isometric-correct input mapping
-        // WASD represent SCREEN directions, then we convert to GRID movement.
-        // ------------------------------------
-        glm::vec2 screenDir(0.0f, 0.0f);
-
-        // Screen space: +x right, +y down
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) screenDir.y -= 1.0f;
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) screenDir.y += 1.0f;
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
-
-        glm::vec2 intentDir = screenDir;
-
-        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
-            screenDir = glm::normalize(screenDir);
-
-        bool newMoving = (intentDir.x != 0.0f || intentDir.y != 0.0f);
-
-        if (newMoving && !player.wasMoving)
-        {
-            // just started moving
-            player.animTimer = 0.0f;
-            player.animFrame = 0;
-        }
-
-        if (!newMoving && player.wasMoving)
-        {
-            // just stopped moving
-            player.animTimer = 0.0f;
-            player.animFrame = 0; // idle frame
-        }
-
-        player.isMoving = newMoving;
-        player.wasMoving = newMoving;
-        player.isRunning = runEnabled && player.isMoving;
-
-        // Visual lean (pixels). Tune these.
-        const float walkLean = 1.5f;
-        const float runLean = 2.5f;
-
-        glm::vec2 nd = intentDir;
-        if (nd.x != 0.0f || nd.y != 0.0f)
-            nd = glm::normalize(nd);
-
-        float lean = player.isRunning ? runLean : walkLean;
-        player.visualOffsetPx = player.isMoving ? (nd * lean) : glm::vec2(0.0f);
-
-        // Update facing based on screen intent
-        if (newMoving)
-        {
-            // Pick dominant axis (prevents diagonal flicker)
-            float ax = std::abs(intentDir.x);
-            float ay = std::abs(intentDir.y);
-
-            if (ax > ay)
-                player.facing = (intentDir.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
-            else if (ay > ax)
-                player.facing = (intentDir.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
-            // else equal: keep current facing
-        }
-
-        // Convert screen direction -> grid direction using iso basis vectors:
-        // screenRight = (+1, -1) in grid
-        // screenDown  = (+1, +1) in grid
-        glm::vec2 gridDir = screenDir.x * glm::vec2(1.0f, -1.0f) +
-            screenDir.y * glm::vec2(1.0f, 1.0f);
-
-        // Normalize so diagonal isnt faster
-        if (gridDir.x != 0.0f || gridDir.y != 0.0f)
-            gridDir = glm::normalize(gridDir);
-        player.moveVec = gridDir;
-
-        // ------------------------------------
-        // Animate (4 frames per direction)
-        // ------------------------------------
-        const float walkFps = 9.0f;
-        const float runFps = 13.0f;
-
-        if (player.isMoving)
-        {
-            const float animFps = player.isRunning ? runFps : walkFps;
-            const float frameTime = 1.0f / animFps;
-
-            player.animTimer += deltaTime;
-            while (player.animTimer >= frameTime)
-            {
-                player.animTimer -= frameTime;
-                player.animFrame = (player.animFrame + 1) % 4; // 0..3
-            }
-        }
-        else
-        {
-            // Idle: reset to first frame
-            player.animFrame = 0;
-            player.animTimer = 0.0f;
-        }
-
-        // Bobbing: use animFrame as a simple step wave.
-        // Frames 0..3 -> [-1, 0, +1, 0] style bob.
-        float bobAmp = player.isRunning ? 1.6f : 1.0f; // pixels
-
-        float bob = 0.0f;
-        switch (player.animFrame)
-        {
-        case 0: bob = -0.5f; break;
-        case 1: bob = 0.0f; break;
-        case 2: bob = 0.5f; break;
-        case 3: bob = 0.0f; break;
-        }
-        if (!player.isMoving) bob = 0.0f;
-
-        player.visualOffsetPx.y += bob * bobAmp;
-
-        player.runKickTimer = std::max(0.0f, player.runKickTimer - deltaTime);
-        if (player.runKickTimer > 0.0f && player.isMoving)
-        {
-            float t = player.runKickTimer / 0.10f; // 1 -> 0
-            // extra lean forward, fades out
-            player.visualOffsetPx += nd * (t * 1.5f);
-        }
-
-        // Frame index in row-major order
-        // frameIndex = row * cols + col
-        int frameIndex = static_cast<int>(player.facing) * 4 + player.animFrame;
-        player.SetFrame(frameIndex);
-
-        // ------------------------------------
-        // Collision settings (grid units)
-        // ------------------------------------
-        // Player hitbox in TILE units (tune later)
-        const glm::vec2 playerHalfExtents(0.05f, 0.05f);
-
-        // 0 = walkable, 1 = blocked
-        auto IsBlockedAt = [&](int tx, int ty) -> bool
-            {
-                if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH)
-                    return true; // outside map = solid
-
-                return collisionGrid[ty * mapW + tx] != 0;
-            };
-
-        // Checks if player AABB (in grid space) overlaps any blocked tiles
-        auto CollidesAt = [&](const glm::vec2& pos) -> bool
-            {
-                glm::vec2 corners[4] =
-                {
-                    { pos.x - playerHalfExtents.x, pos.y - playerHalfExtents.y },
-                    { pos.x + playerHalfExtents.x, pos.y - playerHalfExtents.y },
-                    { pos.x - playerHalfExtents.x, pos.y + playerHalfExtents.y },
-                    { pos.x + playerHalfExtents.x, pos.y + playerHalfExtents.y }
-                };
-
-                for (const glm::vec2& c : corners)
-                {
-                    int tx = (int)std::floor(c.x);
-                    int ty = (int)std::floor(c.y);
-
-                    if (IsBlockedAt(tx, ty))
-                        return true;
-                }
-
-                return false;
-            };
-
-
-
-
-        // ------------------------------------
-        // Integrate movement with hitbox collision (slide along walls)
-        // ------------------------------------
-        glm::vec2 desiredMove = player.moveVec * moveSpeed * deltaTime;
-        glm::vec2 pos = player.GetGridPos();
-
-        // --- X axis ---
-        if (desiredMove.x != 0.0f)
-        {
-            glm::vec2 testPos = pos;
-            testPos.x += desiredMove.x;
-
-            if (!CollidesAt(testPos))
-                pos.x = testPos.x;
-        }
-
-        // --- Y axis ---
-        if (desiredMove.y != 0.0f)
-        {
-            glm::vec2 testPos = pos;
-            testPos.y += desiredMove.y;
-
-            if (!CollidesAt(testPos))
-                pos.y = testPos.y;
-        }
-
-        // Clamp within map bounds
-        pos.x = std::clamp(pos.x, 0.0f, (float)(mapW - 1));
-        pos.y = std::clamp(pos.y, 0.0f, (float)(mapH - 1));
-
-        auto SnapAxis = [](float& v)
-            {
-                float center = std::round(v - 0.5f) + 0.5f;
-                float dist = v - center;
-
-                if (std::abs(dist) < 0.02f)
-                    v = center;
-            };
-
-        if (player.isMoving)
-        {
-            // Snap only on the axis NOT being moved
-            if (std::abs(player.moveVec.x) > std::abs(player.moveVec.y))
-                SnapAxis(pos.y);
-            else
-                SnapAxis(pos.x);
-        }
-
-        player.SetGridPos(pos);
-
-        float targetOffset = 0.0f;
-
-        if (player.isMoving && player.moveVec.y > 0.2f)
-            targetOffset = 1.0f;
-
-        if (player.isMoving && player.moveVec.y < -0.2f)
-            targetOffset = -1.0f;
-
-        player.verticalVisualOffset += (targetOffset - player.verticalVisualOffset) * 12.0f * deltaTime;
+        playerController.Update(window, deltaTime, mapW, mapH, collisionGrid);
 
         // ------------------------------------
         // Door trigger (press E inside door rect)
@@ -983,6 +728,8 @@ int main()
             if (!ChangeMap(activeDoor->targetMap, activeDoor->targetSpawn))
                 std::cerr << "Failed to change map to " << activeDoor->targetMap << "\n";
         }
+
+        glm::vec2 pos = player.GetGridPos();
 
         // ------------------------------------
         // Camera follow with dead-zone + smoothing
