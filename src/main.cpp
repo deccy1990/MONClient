@@ -742,8 +742,13 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
+        glm::vec2 intentDir = screenDir;
+
+        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
+            screenDir = glm::normalize(screenDir);
+
         player.moveVec = screenDir;
-        bool newMoving = (player.moveVec.x != 0.0f || player.moveVec.y != 0.0f);
+        bool newMoving = (intentDir.x != 0.0f || intentDir.y != 0.0f);
 
         if (newMoving && !player.wasMoving)
         {
@@ -763,29 +768,19 @@ int main()
         player.wasMoving = newMoving;
         player.isRunning = runEnabled && player.isMoving;
 
-        if (player.isMoving)
-        {
-            float len = glm::length(player.moveVec);
-            if (len > 0.0f)
-                player.moveVec /= len;
-        }
-
         // Update facing based on screen intent
-        if (player.isMoving)
+        if (newMoving)
         {
             // Pick dominant axis (prevents diagonal flicker)
-            float ax = std::abs(player.moveVec.x);
-            float ay = std::abs(player.moveVec.y);
+            float ax = std::abs(intentDir.x);
+            float ay = std::abs(intentDir.y);
 
             if (ax > ay)
-                player.facing = (player.moveVec.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
+                player.facing = (intentDir.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
             else if (ay > ax)
-                player.facing = (player.moveVec.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
+                player.facing = (intentDir.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
             // else equal: keep current facing
         }
-
-        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
-            screenDir = glm::normalize(screenDir);
 
         // Convert screen direction -> grid direction using iso basis vectors:
         // screenRight = (+1, -1) in grid
