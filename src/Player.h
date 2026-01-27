@@ -23,9 +23,25 @@ public:
     // Pixel offset from the sprite bottom-center to where the "feet" are.
     // Usually (0, 0) is fine if your sprite is tightly cropped, but we keep it configurable.
     glm::vec2 feetPixelOffset{ 0.0f, 0.0f };
+    // Pivot in sprite pixel space (top-left origin). Default is bottom-center ("feet").
+    glm::vec2 spritePivotPx{ 0.0f, 0.0f };
+
+    enum class FacingDir
+    {
+        Down = 0,
+        Left = 1,
+        Right = 2,
+        Up = 3
+    };
+
+    FacingDir facing = FacingDir::Down;
+    bool isMoving = false;
+    bool isRunning = false;
+    glm::vec2 moveVec{ 0.0f, 0.0f };
 
     Player(GLuint texture, const glm::ivec2& tilePos, const glm::vec2& sizePx)
         : mTexture(texture), mTilePos(tilePos), mSizePx(sizePx) {
+        spritePivotPx = glm::vec2(mSizePx.x * 0.5f, mSizePx.y);
     }
     // Smooth position in tile-grid space (float). Example: (5.2, 5.0)
     const glm::vec2& GetGridPos() const { return mGridPos; }
@@ -58,6 +74,7 @@ public:
     void SetSpriteSheet(const SpriteSheet& sheet) { mSheet = sheet; }
     void SetFrame(int frame) { mFrame = frame; }
     int GetFrame() const { return mFrame; }
+    void SetSpritePivotPx(const glm::vec2& pivotPx) { spritePivotPx = pivotPx; }
 
 private:
     GLuint mTexture = 0;

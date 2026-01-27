@@ -665,15 +665,6 @@ int main()
     // ------------------------------------
     // Player animation state (persistent)
     // ------------------------------------
-    enum class Facing
-    {
-        Down = 0,
-        Left = 1,
-        Right = 2,
-        Up = 3
-    };
-
-    static Facing facing = Facing::Down;
     static float animTimer = 0.0f;   // seconds
     static int animFrame = 0;        // 0..3
 
@@ -757,14 +748,18 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
+        player.moveVec = screenDir;
+        player.isMoving = (player.moveVec.x != 0.0f || player.moveVec.y != 0.0f);
+        player.isRunning = runEnabled;
+
         // Update facing based on screen intent
-        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
+        if (player.isMoving)
         {
             // Pick dominant axis (prevents diagonal flicker)
-            if (std::abs(screenDir.x) > std::abs(screenDir.y))
-                facing = (screenDir.x > 0.0f) ? Facing::Right : Facing::Left;
+            if (std::abs(player.moveVec.x) > std::abs(player.moveVec.y))
+                player.facing = (player.moveVec.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
             else
-                facing = (screenDir.y > 0.0f) ? Facing::Down : Facing::Up;
+                player.facing = (player.moveVec.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
         }
 
         if (screenDir.x != 0.0f || screenDir.y != 0.0f)
@@ -816,21 +811,17 @@ int main()
         }
 
         // ------------------------------------
-        // Determine facing direction from input/movement
-        // ------------------------------------
-        bool isMoving = (glm::length(vel) > 0.0001f) ||
-            (screenDir.x != 0.0f || screenDir.y != 0.0f);
-
-        // ------------------------------------
         // Animate (4 frames per direction)
         // ------------------------------------
-        const float animFps = runEnabled ? 10.0f : 7.0f; // run anim faster
-        const float frameTime = 1.0f / animFps;
+        const float walkFps = 9.0f;
+        const float runFps = 13.0f;
 
-        if (isMoving)
+        if (player.isMoving)
         {
-            animTimer += deltaTime;
+            const float animFps = player.isRunning ? runFps : walkFps;
+            const float frameTime = 1.0f / animFps;
 
+            animTimer += deltaTime;
             while (animTimer >= frameTime)
             {
                 animTimer -= frameTime;
@@ -846,7 +837,7 @@ int main()
 
         // Frame index in row-major order
         // frameIndex = row * cols + col
-        int frameIndex = static_cast<int>(facing) * 4 + animFrame;
+        int frameIndex = static_cast<int>(player.facing) * 4 + animFrame;
         player.SetFrame(frameIndex);
 
         // ------------------------------------
