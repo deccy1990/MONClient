@@ -1,6 +1,8 @@
 #include "PlayerController.h"
 #include "Player.h"
 
+#include <GLFW/glfw3.h>
+
 #include <algorithm>
 #include <cmath>
 
