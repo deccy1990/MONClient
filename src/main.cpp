@@ -687,6 +687,9 @@ int main()
         if (ctrlDown && !wasCtrlDown)
         {
             runEnabled = !runEnabled;
+            if (player.isMoving)
+                player.runKickTimer = 0.10f;
+        }
 
             if (player.isMoving)
             {
@@ -749,8 +752,13 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) screenDir.x -= 1.0f;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
+        glm::vec2 intentDir = screenDir;
+
+        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
+            screenDir = glm::normalize(screenDir);
+
         player.moveVec = screenDir;
-        bool newMoving = (player.moveVec.x != 0.0f || player.moveVec.y != 0.0f);
+        bool newMoving = (intentDir.x != 0.0f || intentDir.y != 0.0f);
 
         if (newMoving && !player.wasMoving)
         {
@@ -770,29 +778,30 @@ int main()
         player.wasMoving = newMoving;
         player.isRunning = runEnabled && player.isMoving;
 
-        if (player.isMoving)
-        {
-            float len = glm::length(player.moveVec);
-            if (len > 0.0f)
-                player.moveVec /= len;
-        }
+        // Visual lean (pixels). Tune these.
+        const float walkLean = 1.5f;
+        const float runLean = 2.5f;
+
+        glm::vec2 nd = intentDir;
+        if (nd.x != 0.0f || nd.y != 0.0f)
+            nd = glm::normalize(nd);
+
+        float lean = player.isRunning ? runLean : walkLean;
+        player.visualOffsetPx = player.isMoving ? (nd * lean) : glm::vec2(0.0f);
 
         // Update facing based on screen intent
-        if (player.isMoving)
+        if (newMoving)
         {
             // Pick dominant axis (prevents diagonal flicker)
-            float ax = std::abs(player.moveVec.x);
-            float ay = std::abs(player.moveVec.y);
+            float ax = std::abs(intentDir.x);
+            float ay = std::abs(intentDir.y);
 
             if (ax > ay)
-                player.facing = (player.moveVec.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
+                player.facing = (intentDir.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
             else if (ay > ax)
-                player.facing = (player.moveVec.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
+                player.facing = (intentDir.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
             // else equal: keep current facing
         }
-
-        if (screenDir.x != 0.0f || screenDir.y != 0.0f)
-            screenDir = glm::normalize(screenDir);
 
         // Convert screen direction -> grid direction using iso basis vectors:
         // screenRight = (+1, -1) in grid
@@ -862,6 +871,30 @@ int main()
             // Idle: reset to first frame
             player.animFrame = 0;
             player.animTimer = 0.0f;
+        }
+
+        // Bobbing: use animFrame as a simple step wave.
+        // Frames 0..3 -> [-1, 0, +1, 0] style bob.
+        float bobAmp = player.isRunning ? 1.6f : 1.0f; // pixels
+
+        float bob = 0.0f;
+        switch (player.animFrame)
+        {
+        case 0: bob = -0.5f; break;
+        case 1: bob = 0.0f; break;
+        case 2: bob = 0.5f; break;
+        case 3: bob = 0.0f; break;
+        }
+        if (!player.isMoving) bob = 0.0f;
+
+        player.visualOffsetPx.y += bob * bobAmp;
+
+        player.runKickTimer = std::max(0.0f, player.runKickTimer - deltaTime);
+        if (player.runKickTimer > 0.0f && player.isMoving)
+        {
+            float t = player.runKickTimer / 0.10f; // 1 -> 0
+            // extra lean forward, fades out
+            player.visualOffsetPx += nd * (t * 1.5f);
         }
 
         // Frame index in row-major order
