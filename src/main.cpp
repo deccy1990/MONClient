@@ -685,9 +685,16 @@ int main()
             (glfwGetKey(window, GLFW_KEY_RIGHT_CONTROL) == GLFW_PRESS);
 
         if (ctrlDown && !wasCtrlDown)
+        {
             runEnabled = !runEnabled;
 
-        wasCtrlDown = ctrlDown;
+            if (player.isMoving)
+            {
+                player.animTimer = 0.0f;
+                player.animFrame = 0;
+            }
+        }
+
 
         // ------------------------------------
         // deltaTime (real)
