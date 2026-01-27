@@ -28,7 +28,7 @@ struct SpriteSheet
 
     // Set this to true if you loaded the texture with flipY=true.
     // This makes row 0 refer to the TOP row.
-    bool flippedYOnLoad = true;
+    bool flippedYOnLoad = false;
 
     SpriteSheet() = default;
 
