@@ -1,13 +1,11 @@
 #pragma once
 
 #include <glm/glm.hpp>
-#include <GLFW/glfw3.h>
-
 #include <vector>
 
-class Player;
-class Camera2D;
+struct GLFWwindow;
 
+class Player;
 class PlayerController
 {
 public:
