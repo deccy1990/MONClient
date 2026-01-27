@@ -662,12 +662,6 @@ int main()
 
 
 
-    // ------------------------------------
-    // Player animation state (persistent)
-    // ------------------------------------
-    static float animTimer = 0.0f;   // seconds
-    static int animFrame = 0;        // 0..3
-
     // Persistent velocity (grid units / second)
     static glm::vec2 vel(0.0f, 0.0f);
 
@@ -749,17 +743,45 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) screenDir.x += 1.0f;
 
         player.moveVec = screenDir;
-        player.isMoving = (player.moveVec.x != 0.0f || player.moveVec.y != 0.0f);
-        player.isRunning = runEnabled;
+        bool newMoving = (player.moveVec.x != 0.0f || player.moveVec.y != 0.0f);
+
+        if (newMoving && !player.wasMoving)
+        {
+            // just started moving
+            player.animTimer = 0.0f;
+            player.animFrame = 0;
+        }
+
+        if (!newMoving && player.wasMoving)
+        {
+            // just stopped moving
+            player.animTimer = 0.0f;
+            player.animFrame = 0; // idle frame
+        }
+
+        player.isMoving = newMoving;
+        player.wasMoving = newMoving;
+        player.isRunning = runEnabled && player.isMoving;
+
+        if (player.isMoving)
+        {
+            float len = glm::length(player.moveVec);
+            if (len > 0.0f)
+                player.moveVec /= len;
+        }
 
         // Update facing based on screen intent
         if (player.isMoving)
         {
             // Pick dominant axis (prevents diagonal flicker)
-            if (std::abs(player.moveVec.x) > std::abs(player.moveVec.y))
+            float ax = std::abs(player.moveVec.x);
+            float ay = std::abs(player.moveVec.y);
+
+            if (ax > ay)
                 player.facing = (player.moveVec.x > 0.0f) ? Player::FacingDir::Right : Player::FacingDir::Left;
-            else
+            else if (ay > ax)
                 player.facing = (player.moveVec.y > 0.0f) ? Player::FacingDir::Down : Player::FacingDir::Up;
+            // else equal: keep current facing
         }
 
         if (screenDir.x != 0.0f || screenDir.y != 0.0f)
@@ -821,23 +843,23 @@ int main()
             const float animFps = player.isRunning ? runFps : walkFps;
             const float frameTime = 1.0f / animFps;
 
-            animTimer += deltaTime;
-            while (animTimer >= frameTime)
+            player.animTimer += deltaTime;
+            while (player.animTimer >= frameTime)
             {
-                animTimer -= frameTime;
-                animFrame = (animFrame + 1) % 4; // 0..3
+                player.animTimer -= frameTime;
+                player.animFrame = (player.animFrame + 1) % 4; // 0..3
             }
         }
         else
         {
             // Idle: reset to first frame
-            animFrame = 0;
-            animTimer = 0.0f;
+            player.animFrame = 0;
+            player.animTimer = 0.0f;
         }
 
         // Frame index in row-major order
         // frameIndex = row * cols + col
-        int frameIndex = static_cast<int>(player.facing) * 4 + animFrame;
+        int frameIndex = static_cast<int>(player.facing) * 4 + player.animFrame;
         player.SetFrame(frameIndex);
 
         // ------------------------------------
