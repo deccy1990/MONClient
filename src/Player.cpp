@@ -22,8 +22,7 @@ void Player::DrawOnTile(SpriteRenderer& renderer,
 
     // Convert feet position to sprite top-left
     glm::vec2 playerTopLeft;
-    playerTopLeft.x = feetWorld.x - (mSizePx.x * 0.5f) + feetPixelOffset.x;
-    playerTopLeft.y = feetWorld.y - mSizePx.y + feetPixelOffset.y;
+    playerTopLeft = feetWorld - spritePivotPx + feetPixelOffset;
 
     glm::vec2 uvMin;
     glm::vec2 uvMax;
@@ -39,8 +38,7 @@ void Player::AppendToQueue(RenderQueue& queue,
     glm::vec2 feetWorld = tileTopLeftWorldPos + glm::vec2(tileW * 0.5f, (float)tileH);
 
     glm::vec2 playerTopLeft;
-    playerTopLeft.x = feetWorld.x - (mSizePx.x * 0.5f) + feetPixelOffset.x;
-    playerTopLeft.y = feetWorld.y - mSizePx.y + feetPixelOffset.y;
+    playerTopLeft = feetWorld - spritePivotPx + feetPixelOffset;
 
     RenderCmd cmd{};
     cmd.texture = mTexture;
