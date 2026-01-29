@@ -457,6 +457,7 @@ int main()
         tilesetRuntimes.reserve(mapData.mapData.tilesets.size());
 
         std::unordered_map<std::string, Texture2D> textureCache;
+        const bool tilesetFlipY = false;
         auto LoadCachedTexture = [&](const std::string& path, bool flipY) -> Texture2D
         {
             const std::string cacheKey = path + (flipY ? "|flip" : "|noflip");
@@ -482,7 +483,7 @@ int main()
                 {
                     const int tileId = entry.first;
                     const std::string& imagePath = entry.second.path;
-                    Texture2D texture = LoadCachedTexture(imagePath, true);
+                    Texture2D texture = LoadCachedTexture(imagePath, tilesetFlipY);
                     if (!texture.id)
                     {
                         std::cerr << "Failed to load tileset tile image: " << imagePath << "\n";
@@ -496,7 +497,7 @@ int main()
             }
             else
             {
-                Texture2D texture = LoadCachedTexture(tilesetDef.imagePath, true);
+                Texture2D texture = LoadCachedTexture(tilesetDef.imagePath, tilesetFlipY);
                 if (!texture.id)
                 {
                     std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
@@ -844,7 +845,8 @@ int main()
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
-            cmd.posPx = mapOrigin + instance.worldPos;
+            glm::vec2 anchor = mapOrigin + instance.worldPos;
+            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
