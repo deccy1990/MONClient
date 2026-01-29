@@ -176,35 +176,74 @@ namespace
         outDef.tileCount = tilesetElement->IntAttribute("tilecount", 0);
 
         XMLElement* image = tilesetElement->FirstChildElement("image");
-        if (!image)
+        if (image)
         {
-            std::cerr << "Tileset missing <image> element\n";
-            return false;
-        }
-
-        const char* imageSource = image->Attribute("source");
-        if (!imageSource)
-        {
-            std::cerr << "Tileset image missing source attribute\n";
-            return false;
-        }
-
-        outDef.imageW = image->IntAttribute("width", 0);
-        outDef.imageH = image->IntAttribute("height", 0);
-
-        outDef.imagePath = (imageBaseDir / imageSource).lexically_normal().string();
-
-        if (outDef.tileCount <= 0)
-        {
-            int rows = 0;
-            if (outDef.columns > 0 && outDef.tileW > 0 && outDef.tileH > 0)
+            // ---- Sheet-based tileset (existing code) ----
+            const char* imageSource = image->Attribute("source");
+            if (!imageSource)
             {
-                if (outDef.imageW > 0 && outDef.imageH > 0)
-                    rows = (outDef.imageH / outDef.tileH);
+                std::cerr << "Tileset image missing source attribute\n";
+                return false;
             }
 
-            if (outDef.columns > 0 && rows > 0)
-                outDef.tileCount = outDef.columns * rows;
+            outDef.imageW = image->IntAttribute("width", 0);
+            outDef.imageH = image->IntAttribute("height", 0);
+
+            outDef.imagePath = (imageBaseDir / imageSource).lexically_normal().string();
+
+            if (outDef.tileCount <= 0)
+            {
+                int rows = 0;
+                if (outDef.columns > 0 && outDef.tileW > 0 && outDef.tileH > 0)
+                {
+                    if (outDef.imageW > 0 && outDef.imageH > 0)
+                        rows = (outDef.imageH / outDef.tileH);
+                }
+
+                if (outDef.columns > 0 && rows > 0)
+                    outDef.tileCount = outDef.columns * rows;
+            }
+        }
+        else
+        {
+            // ---- Image Collection tileset ----
+            outDef.isImageCollection = true;
+
+            for (XMLElement* tile = tilesetElement->FirstChildElement("tile");
+                tile;
+                tile = tile->NextSiblingElement("tile"))
+            {
+                const int tileId = tile->IntAttribute("id", -1);
+                if (tileId < 0)
+                    continue;
+
+                XMLElement* tileImage = tile->FirstChildElement("image");
+                if (!tileImage)
+                    continue;
+
+                const char* src = tileImage->Attribute("source");
+                if (!src)
+                    continue;
+
+                TileImageDef img{};
+                img.path = (imageBaseDir / src).lexically_normal().string();
+                img.w = tileImage->IntAttribute("width", 0);
+                img.h = tileImage->IntAttribute("height", 0);
+
+                outDef.tileImages[tileId] = img;
+
+                outDef.tileW = std::max(outDef.tileW, img.w);
+                outDef.tileH = std::max(outDef.tileH, img.h);
+            }
+
+            if (outDef.tileImages.empty())
+            {
+                std::cerr << "Image collection tileset has no <tile><image> entries\n";
+                return false;
+            }
+
+            if (outDef.tileCount <= 0)
+                outDef.tileCount = static_cast<int>(outDef.tileImages.size());
         }
 
         for (XMLElement* tile = tilesetElement->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
