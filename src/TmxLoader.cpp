@@ -476,37 +476,28 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 }
 
                 // Mask off flip flags (Tiled uses high bits for flipping)
-                static constexpr uint32_t TMX_GID_MASK = 0x1FFFFFFF;
                 uint32_t gid = rawGid & TMX_GID_MASK;
 
                 if (gid != 0)
                 {
-                    TileObject tileObject{};
-                    tileObject.gid = gid;
-                    tileObject.positionPx = glm::vec2(
-                        GetFloatAttribute(object, "x", 0.0f),
-                        GetFloatAttribute(object, "y", 0.0f));
+                    const float x = GetFloatAttribute(object, "x", 0.0f);
+                    const float y = GetFloatAttribute(object, "y", 0.0f);
+                    const float objW = GetFloatAttribute(object, "width", 0.0f);
+                    const float objH = GetFloatAttribute(object, "height", 0.0f);
 
-                    const char* name = object->Attribute("name");
-                    const char* type = object->Attribute("type");
-                    tileObject.name = name ? name : "";
-                    tileObject.type = type ? type : "";
+                    MapObjectInstance inst{};
+                    inst.tileIndex = gid;
 
-                    mapData.tileObjects.push_back(std::move(tileObject));
+                    // raw Tiled pixel anchor (KEEP AS-IS)
+                    inst.worldPos = glm::vec2(x, y);
 
-                    MapObjectInstance objectInstance{};
-                    objectInstance.tileIndex = gid;
-                    const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
-                    const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
-                    const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
+                    // Prefer object size if present (trees: 256x256)
+                    if (objW > 0.0f && objH > 0.0f)
+                        inst.size = glm::vec2(objW, objH);
+                    else
+                        inst.size = glm::vec2((float)mapData.tileW, (float)mapData.tileH);
 
-                    objectInstance.size = glm::vec2(tileW, tileH);
-                    // Store raw Tiled pixel position (bottom-anchor for tile objects).
-                    objectInstance.worldPos = tileObject.positionPx;
-                    objectInstance.name = tileObject.name;
-                    objectInstance.type = tileObject.type;
-
-                    mapData.objectInstances.push_back(std::move(objectInstance));
+                    mapData.objectInstances.push_back(std::move(inst));
                     continue;
                 }
 
@@ -624,7 +615,5 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
               << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
               << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
     std::cout << "  objects: " << mapData.objects.size() << "\n";
-    std::cout << "  tile objects: " << mapData.tileObjects.size() << "\n";
-
     return true;
 }

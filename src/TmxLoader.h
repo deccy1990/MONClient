@@ -40,14 +40,6 @@ struct MapObjectInstance
     std::string type;
 };
 
-struct TileObject
-{
-    uint32_t gid = 0;
-    glm::vec2 positionPx{ 0.0f, 0.0f };
-    std::string name;
-    std::string type;
-};
-
 struct TilePropertyFlags
 {
     bool blocking = false;
@@ -94,7 +86,6 @@ struct MapData
     std::vector<uint8_t> collision;
     std::vector<MapObject> objects;
     std::vector<MapObjectInstance> objectInstances;
-    std::vector<TileObject> tileObjects;
     std::vector<TilePropertyFlags> tileFlags;
     std::vector<DoorDef> doors;
     std::vector<SpawnDef> spawns;

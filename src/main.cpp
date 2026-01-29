@@ -831,29 +831,24 @@ int main()
 
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
+        const float halfW = loadedMap.mapData.tileW * 0.5f;
+        const int mapH = loadedMap.mapData.height;
+
+        // Tiled shifts iso maps right so minX >= 0. Undo that.
+        const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
             ResolvedTile resolved{};
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            // For image-collection objects we REQUIRE real size
-            glm::vec2 drawSize = resolved.sizePx;
+            glm::vec2 drawSize = instance.size;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // --- Convert TMX object position (Tiled iso pixel space) -> our iso pixel space ---
-            const float halfW = loadedMap.mapData.tileW * 0.5f;
-            const int mapH = loadedMap.mapData.height;
-
-            // Tiled shifts iso maps right so minX >= 0. Undo that.
-            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
-
-            // Anchor = bottom point of the object in world space (pixels)
-            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // If objects are consistently half a tile off, enable this ONE line:
-            anchor.x += halfW;
+            // Tiled gives x,y = BOTTOM-LEFT of the image in map pixel space.
+            glm::vec2 bottomLeft = mapOrigin + tiledIsoUnshift + instance.worldPos;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
@@ -861,12 +856,12 @@ int main()
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // Draw position expects TOP-LEFT.
-            // Anchor is BOTTOM-CENTER, so convert.
-            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            // Convert bottom-left -> top-left.
+            cmd.posPx = bottomLeft - glm::vec2(0.0f, drawSize.y);
 
-            // Depth from feet (use anchor directly)
-            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
+            // Depth from feet (bottom-center).
+            glm::vec2 feetWorld = bottomLeft + glm::vec2(drawSize.x * 0.5f, 0.0f);
+            cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
 
             renderQueue.Push(cmd);
         }
