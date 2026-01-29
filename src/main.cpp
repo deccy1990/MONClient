@@ -44,6 +44,21 @@ struct Texture2D
     int height = 0;
 };
 
+static glm::vec2 TiledIsoPixelsToEngineIsoPixels(const glm::vec2& tiledPx,
+    int mapH,
+    int tileW,
+    int tileH,
+    const glm::vec2& mapOrigin)
+{
+    const float halfW = tileW * 0.5f;
+    // Tiled shifts isometric maps right so minX >= 0. Undo it.
+    glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+    // Engine iso origin is mapOrigin
+    return mapOrigin + tiledIsoUnshift + tiledPx;
+}
+
+
 /*
     ============================================
     Shaders (SpriteRenderer expects these uniforms)
@@ -831,11 +846,9 @@ int main()
 
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
-        const float halfW = loadedMap.mapData.tileW * 0.5f;
-        const int mapH = loadedMap.mapData.height;
-
-        // Tiled shifts iso maps right so minX >= 0. Undo that.
-        const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+        // Undo Tiled's isometric X shift (keeps X positive in TMX)
+        const float objhalfW = loadedMap.mapData.tileW * 0.5f;
+        const glm::vec2 tiledIsoUnshift(-(loadedMap.mapData.height - 1) * halfW, 0.0f);
 
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
@@ -843,28 +856,34 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            glm::vec2 drawSize = instance.size;
+            // --- SIZE: prefer the TMX object size (critical for image-collection trees)
+            glm::vec2 drawSize = instance.size; // <-- 256x256 from TMX
+            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
+                drawSize = resolved.sizePx;     // fallback only
+
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // Tiled gives x,y = BOTTOM-LEFT of the image in map pixel space.
+            // TMX tile-object x,y is BOTTOM-LEFT in Tiled's isometric pixel space
             glm::vec2 bottomLeft = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // Convert bottom-left -> top-left for rendering
+            glm::vec2 topLeft = bottomLeft - glm::vec2(0.0f, drawSize.y);
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
+            cmd.posPx = topLeft;
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // Convert bottom-left -> top-left.
-            cmd.posPx = bottomLeft - glm::vec2(0.0f, drawSize.y);
-
-            // Depth from feet (bottom-center).
+            // Depth from bottom-center of the sprite
             glm::vec2 feetWorld = bottomLeft + glm::vec2(drawSize.x * 0.5f, 0.0f);
             cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
 
             renderQueue.Push(cmd);
         }
+
 
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
