@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <sstream>
 
@@ -363,63 +364,178 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     std::vector<uint8_t> collisionTiles(expectedCount, 0);
     bool hasCollisionLayer = false;
 
-    for (XMLElement* layer = map->FirstChildElement("layer"); layer; layer = layer->NextSiblingElement("layer"))
-    {
-        const char* name = layer->Attribute("name");
-        const std::string layerName = name ? name : "";
-        const bool visible = GetBoolAttribute(layer, "visible", true);
-
-        const std::string lowerName = ToLower(layerName);
-        const bool isCollision = (lowerName == "collision");
-
-        XMLElement* data = layer->FirstChildElement("data");
-        if (!data)
+    auto ParseLayer = [&](XMLElement* layer)
         {
-            std::cerr << "Layer '" << layerName << "' missing <data>\n";
-            continue;
-        }
+            const char* name = layer->Attribute("name");
+            const std::string layerName = name ? name : "";
+            const bool visible = GetBoolAttribute(layer, "visible", true);
 
-        const char* encoding = data->Attribute("encoding");
-        if (!encoding || std::string(encoding) != "csv")
-        {
-            std::cerr << "Layer '" << layerName << "' is not CSV encoded\n";
-            continue;
-        }
+            const std::string lowerName = ToLower(layerName);
+            const bool isCollision = (lowerName == "collision");
 
-        std::vector<int> rawGids = ParseCsvTiles(data->GetText(), expectedCount);
-        if ((int)rawGids.size() != expectedCount)
-        {
-            std::cerr << "Layer '" << layerName << "' size mismatch. Expected "
-                << expectedCount << " entries but got " << rawGids.size() << "\n";
-            continue;
-        }
+            XMLElement* data = layer->FirstChildElement("data");
+            if (!data)
+            {
+                std::cerr << "Layer '" << layerName << "' missing <data>\n";
+                return;
+            }
 
-        if (isCollision)
-        {
-            hasCollisionLayer = true;
+            const char* encoding = data->Attribute("encoding");
+            if (!encoding || std::string(encoding) != "csv")
+            {
+                std::cerr << "Layer '" << layerName << "' is not CSV encoded\n";
+                return;
+            }
+
+            std::vector<int> rawGids = ParseCsvTiles(data->GetText(), expectedCount);
+            if ((int)rawGids.size() != expectedCount)
+            {
+                std::cerr << "Layer '" << layerName << "' size mismatch. Expected "
+                    << expectedCount << " entries but got " << rawGids.size() << "\n";
+                return;
+            }
+
+            if (isCollision)
+            {
+                hasCollisionLayer = true;
+                for (int i = 0; i < expectedCount; ++i)
+                {
+                    const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
+                    collisionTiles[i] = gid == 0 ? 0 : 1;
+                }
+                return;
+            }
+
+            std::vector<uint32_t> tiles(expectedCount, 0);
             for (int i = 0; i < expectedCount; ++i)
             {
                 const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
-                collisionTiles[i] = gid == 0 ? 0 : 1;
+                tiles[i] = gid;
             }
-            continue;
-        }
 
-        std::vector<uint32_t> tiles(expectedCount, 0);
-        for (int i = 0; i < expectedCount; ++i)
+            if (lowerName == "ground")
+                mapData.groundGids = std::move(tiles);
+            else if (lowerName == "walls")
+                mapData.wallsGids = std::move(tiles);
+            else if (lowerName == "overhead")
+                mapData.overheadGids = std::move(tiles);
+            (void)visible;
+        };
+
+    auto ParseObjectGroup = [&](XMLElement* objectGroup)
         {
-            const uint32_t gid = static_cast<uint32_t>(rawGids[i]) & TMX_GID_MASK;
-            tiles[i] = gid;
-        }
+            for (XMLElement* object = objectGroup->FirstChildElement("object"); object; object = object->NextSiblingElement("object"))
+            {
+                // TMX tile-object gid may contain flip flags in the high bits.
+                // Read it in a version-compatible way (TinyXML2 differs by version).
+                uint32_t rawGid = 0;
 
-        if (lowerName == "ground")
-            mapData.groundGids = std::move(tiles);
-        else if (lowerName == "walls")
-            mapData.wallsGids = std::move(tiles);
-        else if (lowerName == "overhead")
-            mapData.overheadGids = std::move(tiles);
-        (void)visible;
-    }
+                if (const char* gidStr = object->Attribute("gid"))
+                {
+                    // TMX stores gid as decimal text.
+                    rawGid = static_cast<uint32_t>(std::strtoul(gidStr, nullptr, 10));
+                }
+
+                // Mask off flip flags (Tiled uses high bits for flipping)
+                static constexpr uint32_t TMX_GID_MASK = 0x1FFFFFFF;
+                uint32_t gid = rawGid & TMX_GID_MASK;
+
+                if (gid != 0)
+                {
+                    TileObject tileObject{};
+                    tileObject.gid = gid;
+                    tileObject.positionPx = glm::vec2(
+                        GetFloatAttribute(object, "x", 0.0f),
+                        GetFloatAttribute(object, "y", 0.0f));
+
+                    const char* name = object->Attribute("name");
+                    const char* type = object->Attribute("type");
+                    tileObject.name = name ? name : "";
+                    tileObject.type = type ? type : "";
+
+                    mapData.tileObjects.push_back(std::move(tileObject));
+
+                    MapObjectInstance objectInstance{};
+                    objectInstance.tileIndex = gid;
+                    const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
+                    const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
+                    const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
+
+                    objectInstance.size = glm::vec2(tileW, tileH);
+                    objectInstance.worldPos = glm::vec2(
+                        tileObject.positionPx.x,
+                        tileObject.positionPx.y - tileH);
+                    objectInstance.name = tileObject.name;
+                    objectInstance.type = tileObject.type;
+
+                    mapData.objectInstances.push_back(std::move(objectInstance));
+                    continue;
+                }
+
+                const char* name = object->Attribute("name");
+                const char* type = object->Attribute("type");
+                const std::string typeName = type ? type : "";
+                const float x = GetFloatAttribute(object, "x", 0.0f);
+                const float y = GetFloatAttribute(object, "y", 0.0f);
+                const float w = GetFloatAttribute(object, "width", 0.0f);
+                const float h = GetFloatAttribute(object, "height", 0.0f);
+                XMLElement* props = object->FirstChildElement("properties");
+
+                if (type && typeName == "Door")
+                {
+                    DoorDef door{};
+                    door.posPx = { x, y };
+                    door.sizePx = { w, h };
+                    door.targetMap = GetStringProp(props, "targetMap");
+                    door.targetSpawn = GetStringProp(props, "targetSpawn");
+                    mapData.doors.push_back(std::move(door));
+                    continue;
+                }
+
+                if (type && typeName == "Spawn")
+                {
+                    SpawnDef spawn{};
+                    spawn.name = name ? name : "";
+                    spawn.posPx = { x, y };
+                    mapData.spawns.push_back(std::move(spawn));
+                    continue;
+                }
+
+                MapObject mapObject{};
+                mapObject.id = object->IntAttribute("id", 0);
+                mapObject.name = name ? name : "";
+                mapObject.type = typeName;
+                mapObject.positionPx = { x, y };
+                mapObject.sizePx = { w, h };
+                mapObject.properties = ParseProperties(props);
+                mapData.objects.push_back(std::move(mapObject));
+            }
+        };
+
+    std::function<void(XMLElement*)> ParseNode;
+    ParseNode = [&](XMLElement* node)
+        {
+            if (!node)
+                return;
+
+            const std::string tag = node->Value();
+            if (tag == "layer")
+            {
+                ParseLayer(node);
+            }
+            else if (tag == "objectgroup")
+            {
+                ParseObjectGroup(node);
+            }
+            else if (tag == "group")
+            {
+                for (XMLElement* child = node->FirstChildElement(); child; child = child->NextSiblingElement())
+                    ParseNode(child);
+            }
+        };
+
+    for (XMLElement* node = map->FirstChildElement(); node; node = node->NextSiblingElement())
+        ParseNode(node);
 
     if (hasCollisionLayer)
         mapData.collision = std::move(collisionTiles);
@@ -459,97 +575,6 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
 
         if (mapData.tileFlags[i].blocking)
             mapData.collision[i] = 1;
-    }
-
-    // --- Object layers: <objectgroup>
-    for (XMLElement* objectGroup = map->FirstChildElement("objectgroup"); objectGroup; objectGroup = objectGroup->NextSiblingElement("objectgroup"))
-    {
-        for (XMLElement* object = objectGroup->FirstChildElement("object"); object; object = object->NextSiblingElement("object"))
-        {
-            // TMX tile-object gid may contain flip flags in the high bits.
-            // Read it in a version-compatible way (TinyXML2 differs by version).
-            uint32_t rawGid = 0;
-
-            if (const char* gidStr = object->Attribute("gid"))
-            {
-                // TMX stores gid as decimal text.
-                rawGid = static_cast<uint32_t>(std::strtoul(gidStr, nullptr, 10));
-            }
-
-            // Mask off flip flags (Tiled uses high bits for flipping)
-            static constexpr uint32_t TMX_GID_MASK = 0x1FFFFFFF;
-            uint32_t gid = rawGid & TMX_GID_MASK;
-
-            if (gid != 0)
-            {
-                TileObject tileObject{};
-                tileObject.gid = gid;
-                tileObject.positionPx = glm::vec2(
-                    GetFloatAttribute(object, "x", 0.0f),
-                    GetFloatAttribute(object, "y", 0.0f));
-
-                const char* name = object->Attribute("name");
-                const char* type = object->Attribute("type");
-                tileObject.name = name ? name : "";
-                tileObject.type = type ? type : "";
-
-                mapData.tileObjects.push_back(std::move(tileObject));
-
-                MapObjectInstance objectInstance{};
-                objectInstance.tileIndex = gid;
-                const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
-                const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
-                const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
-
-                objectInstance.size = glm::vec2(tileW, tileH);
-                objectInstance.worldPos = glm::vec2(
-                    tileObject.positionPx.x,
-                    tileObject.positionPx.y - tileH);
-                objectInstance.name = tileObject.name;
-                objectInstance.type = tileObject.type;
-
-                mapData.objectInstances.push_back(std::move(objectInstance));
-                continue;
-            }
-
-            const char* name = object->Attribute("name");
-            const char* type = object->Attribute("type");
-            const std::string typeName = type ? type : "";
-            const float x = GetFloatAttribute(object, "x", 0.0f);
-            const float y = GetFloatAttribute(object, "y", 0.0f);
-            const float w = GetFloatAttribute(object, "width", 0.0f);
-            const float h = GetFloatAttribute(object, "height", 0.0f);
-            XMLElement* props = object->FirstChildElement("properties");
-
-            if (type && typeName == "Door")
-            {
-                DoorDef door{};
-                door.posPx = { x, y };
-                door.sizePx = { w, h };
-                door.targetMap = GetStringProp(props, "targetMap");
-                door.targetSpawn = GetStringProp(props, "targetSpawn");
-                mapData.doors.push_back(std::move(door));
-                continue;
-            }
-
-            if (type && typeName == "Spawn")
-            {
-                SpawnDef spawn{};
-                spawn.name = name ? name : "";
-                spawn.posPx = { x, y };
-                mapData.spawns.push_back(std::move(spawn));
-                continue;
-            }
-
-            MapObject mapObject{};
-            mapObject.id = object->IntAttribute("id", 0);
-            mapObject.name = name ? name : "";
-            mapObject.type = typeName;
-            mapObject.positionPx = { x, y };
-            mapObject.sizePx = { w, h };
-            mapObject.properties = ParseProperties(props);
-            mapData.objects.push_back(std::move(mapObject));
-        }
     }
 
     std::cout << "TMX loaded: " << tmxPath << "\n";
