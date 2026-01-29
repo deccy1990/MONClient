@@ -501,6 +501,7 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                     const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
 
                     objectInstance.size = glm::vec2(tileW, tileH);
+                    // Store raw Tiled pixel position (bottom-anchor for tile objects).
                     objectInstance.worldPos = tileObject.positionPx;
                     objectInstance.name = tileObject.name;
                     objectInstance.type = tileObject.type;
