@@ -405,7 +405,7 @@ int main()
     std::cout << "Working directory: " << std::filesystem::current_path() << "\n";
 
     LoadedMap loadedMap;
-    if (!LoadTmxMap("assets/maps/testmap.tmx", loadedMap))
+    if (!LoadTmxMap("assets/maps/StarterZone.tmx", loadedMap))
     {
         glfwTerminate();
         return -1;
