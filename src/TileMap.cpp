@@ -56,7 +56,7 @@ void TileMap::DrawGround(SpriteRenderer& renderer,
     float animationTimeMs) const
 {
     const glm::vec2 mapOrigin(viewportSizePx.x * 0.5f, 60.0f);
-    glm::vec2 size((float)mTileWidthPx, (float)mTileHeightPx);
+    glm::vec2 baseSize((float)mTileWidthPx, (float)mTileHeightPx);
 
     for (int y = 0; y < mHeight; ++y)
     {
@@ -77,7 +77,16 @@ void TileMap::DrawGround(SpriteRenderer& renderer,
                 if (!resolver.Resolve(gid, animationTimeMs, resolved))
                     continue;
 
-                renderer.Draw(resolved.textureId, worldPos, size, camera, resolved.uvMin, resolved.uvMax);
+                glm::vec2 drawSize = resolved.sizePx;
+                if (drawSize.x <= 0.0f)
+                    drawSize.x = baseSize.x;
+                if (drawSize.y <= 0.0f)
+                    drawSize.y = baseSize.y;
+
+                glm::vec2 drawPos = worldPos;
+                drawPos.y -= (drawSize.y - baseSize.y);
+
+                renderer.Draw(resolved.textureId, drawPos, drawSize, camera, resolved.uvMin, resolved.uvMax);
             }
         }
     }
@@ -91,7 +100,7 @@ void TileMap::AppendOccluders(RenderQueue& queue,
 {
     (void)camera;
     const glm::vec2 mapOrigin(viewportSizePx.x * 0.5f, 60.0f);
-    glm::vec2 size((float)mTileWidthPx, (float)mTileHeightPx);
+    glm::vec2 baseSize((float)mTileWidthPx, (float)mTileHeightPx);
 
     for (int y = 0; y < mHeight; ++y)
     {
@@ -112,10 +121,19 @@ void TileMap::AppendOccluders(RenderQueue& queue,
                 if (!resolver.Resolve(gid, animationTimeMs, resolved))
                     continue;
 
+                glm::vec2 drawSize = resolved.sizePx;
+                if (drawSize.x <= 0.0f)
+                    drawSize.x = baseSize.x;
+                if (drawSize.y <= 0.0f)
+                    drawSize.y = baseSize.y;
+
+                glm::vec2 drawPos = worldPos;
+                drawPos.y -= (drawSize.y - baseSize.y);
+
                 RenderCmd cmd{};
                 cmd.texture = resolved.textureId;
-                cmd.posPx = worldPos;
-                cmd.sizePx = size;
+                cmd.posPx = drawPos;
+                cmd.sizePx = drawSize;
                 cmd.uvMin = resolved.uvMin;
                 cmd.uvMax = resolved.uvMax;
 
