@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "TileSet.h"
@@ -25,6 +26,7 @@ struct TilesetRuntime
     TilesetDef def;
     TileSet tileset;
     GLuint textureId = 0;
+    std::unordered_map<int, GLuint> tileTextures;
 };
 
 class TileResolver

@@ -456,22 +456,61 @@ int main()
         tilesetTextures.reserve(mapData.mapData.tilesets.size());
         tilesetRuntimes.reserve(mapData.mapData.tilesets.size());
 
+        std::unordered_map<std::string, Texture2D> textureCache;
+        auto LoadCachedTexture = [&](const std::string& path, bool flipY) -> Texture2D
+        {
+            const std::string cacheKey = path + (flipY ? "|flip" : "|noflip");
+            auto it = textureCache.find(cacheKey);
+            if (it != textureCache.end())
+                return it->second;
+
+            Texture2D texture = LoadTextureRGBA(path.c_str(), flipY);
+            if (texture.id)
+                textureCache.emplace(cacheKey, texture);
+            return texture;
+        };
+
         for (const TilesetDef& tilesetDef : mapData.mapData.tilesets)
         {
-            Texture2D texture = LoadTextureRGBA(tilesetDef.imagePath.c_str(), true);
-            if (!texture.id)
+            if (tilesetDef.isImageCollection)
             {
-                std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
-                return false;
+                TileSet tileset(0, 0, tilesetDef.tileW, tilesetDef.tileH);
+                tileset.SetAnimations(tilesetDef.animations);
+
+                TilesetRuntime runtime{ tilesetDef, tileset, 0 };
+                for (const auto& entry : tilesetDef.tileImages)
+                {
+                    const int tileId = entry.first;
+                    const std::string& imagePath = entry.second.path;
+                    Texture2D texture = LoadCachedTexture(imagePath, true);
+                    if (!texture.id)
+                    {
+                        std::cerr << "Failed to load tileset tile image: " << imagePath << "\n";
+                        return false;
+                    }
+
+                    runtime.tileTextures.emplace(tileId, texture.id);
+                }
+
+                tilesetRuntimes.push_back(std::move(runtime));
             }
+            else
+            {
+                Texture2D texture = LoadCachedTexture(tilesetDef.imagePath, true);
+                if (!texture.id)
+                {
+                    std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
+                    return false;
+                }
 
-            tilesetTextures.push_back(texture);
+                tilesetTextures.push_back(texture);
 
-            TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
-            tileset.SetAnimations(tilesetDef.animations);
+                TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
+                tileset.SetAnimations(tilesetDef.animations);
 
-            TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
-            tilesetRuntimes.push_back(std::move(runtime));
+                TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
+                tilesetRuntimes.push_back(std::move(runtime));
+            }
         }
 
         return true;
@@ -797,10 +836,16 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
+            glm::vec2 drawSize = resolved.sizePx;
+            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
+                drawSize = instance.size;
+            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
+                drawSize = glm::vec2((float)tileW, (float)tileH);
+
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
             cmd.posPx = mapOrigin + instance.worldPos;
-            cmd.sizePx = instance.size;
+            cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
