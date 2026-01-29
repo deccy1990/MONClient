@@ -500,11 +500,19 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                     const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
                     const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
 
-                    objectInstance.size = glm::vec2(tileW, tileH);
-                    // Store raw Tiled pixel position (bottom-anchor for tile objects).
-                    objectInstance.worldPos = tileObject.positionPx;
-                    objectInstance.name = tileObject.name;
-                    objectInstance.type = tileObject.type;
+                    const float objW = GetFloatAttribute(object, "width", 0.0f);
+                    const float objH = GetFloatAttribute(object, "height", 0.0f);
+
+                    // Prefer the actual object size from TMX (your trees are 256x256)
+                    if (objW > 0.0f && objH > 0.0f)
+                        objectInstance.size = glm::vec2(objW, objH);
+                    else
+                        objectInstance.size = glm::vec2(tileW, tileH);
+
+                    // Keep raw Tiled pixel anchor
+                    objectInstance.worldPos = glm::vec2(
+                        GetFloatAttribute(object, "x", 0.0f),
+                        GetFloatAttribute(object, "y", 0.0f));
 
                     mapData.objectInstances.push_back(std::move(objectInstance));
                     continue;
