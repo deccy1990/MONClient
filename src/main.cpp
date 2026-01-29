@@ -848,8 +848,18 @@ int main()
 
         const int mapH = loadedMap.mapData.height;
 
+        // tile size (map tile)
+        const float tileWf = (float)loadedMap.mapData.tileW;
+        const float tileHf = (float)loadedMap.mapData.tileH;
+        const float objhalfW = tileWf * 0.5f;
+
         // Tiled shifts iso maps right so minX >= 0. Undo that.
         const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+        // IMPORTANT:
+        // If in Tiled tileset properties you set Object Alignment = Bottom,
+        // then tile-object x,y is bottom-center and this should be true.
+        const bool tiledTileObjectsAreBottomCenter = false;
 
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
@@ -857,13 +867,21 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            // For image-collection objects we REQUIRE real size
-            glm::vec2 drawSize = instance.size;
+            // Prefer real image size if resolver knows it (best for image-collection tilesets)
+            glm::vec2 drawSize = resolved.sizePx;
+            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
+                drawSize = instance.size; // fallback (TMX object width/height or tileset max)
+
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // Tiled -> engine iso unshift.
-            glm::vec2 bottomCenter = mapOrigin + tiledIsoUnshift + instance.worldPos;
+            // TMX tile-object x,y in "map pixel space"
+            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // If Tiled is giving bottom-left, convert to bottom-center using the OBJECT width,
+            // NOT the tile width.
+            if (!tiledTileObjectsAreBottomCenter)
+                anchor.x += drawSize.x * 0.5f;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
@@ -871,16 +889,14 @@ int main()
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // Bottom-center -> top-left.
-            cmd.posPx = bottomCenter - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            // bottom-center -> top-left
+            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
-            // Depth from feet (bottom-center).
-            cmd.depthKey = DepthFromFeetWorldY(bottomCenter.y);
+            // depth from feet (bottom-center)
+            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
 
             renderQueue.Push(cmd);
         }
-
-
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
 
@@ -891,8 +907,8 @@ int main()
         }
 
         overheadMap.DrawOverhead(renderer, tileResolver, camera, { fbW, fbH }, animationTimeMs);
-
         glfwSwapBuffers(window);
+
     }
 
     glfwTerminate();
