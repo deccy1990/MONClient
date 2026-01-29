@@ -845,14 +845,26 @@ int main()
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
-            glm::vec2 anchor = mapOrigin + instance.worldPos;
+
+            // Tiled shifts isometric maps so all X are positive.
+            // Unshift back into our iso world space.
+            const float halfW = loadedMap.mapData.tileW * 0.5f;
+            const int mapHeight = loadedMap.mapData.height;
+            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+            // Treat instance.worldPos as TMX object pixels (x,y)
+            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // Bottom-center anchor -> top-left draw position
             cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
             glm::vec2 feetWorld = cmd.posPx + glm::vec2(cmd.sizePx.x * 0.5f, cmd.sizePx.y);
             cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
+
 
             renderQueue.Push(cmd);
         }
