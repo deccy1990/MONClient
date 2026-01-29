@@ -476,7 +476,6 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 }
 
                 // Mask off flip flags (Tiled uses high bits for flipping)
-                static constexpr uint32_t TMX_GID_MASK = 0x1FFFFFFF;
                 uint32_t gid = rawGid & TMX_GID_MASK;
 
                 if (gid != 0)
@@ -632,7 +631,5 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
               << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
               << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
     std::cout << "  objects: " << mapData.objects.size() << "\n";
-    std::cout << "  tile objects: " << mapData.tileObjects.size() << "\n";
-
     return true;
 }
