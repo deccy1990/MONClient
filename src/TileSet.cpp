@@ -55,7 +55,7 @@ void TileSet::GetUV(int tileId, glm::vec2& outUvMin, glm::vec2& outUvMax) const
     const int y0_fromTop = rowFromTop * mTileH;
 
     // Convert to normalized UVs.
-    // Because stb_image is flipped vertically, we treat row 0 as "top row"
+    // Because stb_image is not flipped on load, we treat row 0 as "top row"
     // by flipping V in UV space:
     //
     // vTop    = 1 - (y0 / atlasH)

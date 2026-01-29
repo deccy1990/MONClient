@@ -13,8 +13,7 @@
     Maps tileId (0-based) to UV coords inside a uniform grid atlas.
 
     IMPORTANT:
-    - We are using stbi_set_flip_vertically_on_load(true),
-      which makes OpenGL UV origin (0,0) bottom-left.
+    - We are loading atlas images without flipping them on load.
     - Most atlas images are authored with tile (0) at TOP-LEFT.
       So we flip V when computing UVs, so tileId 0 is top-left in the image.
 */
