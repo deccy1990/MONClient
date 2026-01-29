@@ -55,6 +55,13 @@ struct TilePropertyFlags
     bool slow = false;
 };
 
+struct TileImageDef
+{
+    std::string path;
+    int w = 0;
+    int h = 0;
+};
+
 struct TilesetDef
 {
     int firstGid = 1;
@@ -65,6 +72,8 @@ struct TilesetDef
     std::string imagePath;
     int imageW = 0;
     int imageH = 0;
+    bool isImageCollection = false;
+    std::unordered_map<int, TileImageDef> tileImages;
     std::unordered_map<int, TileAnimation> animations;
     std::unordered_map<int, TilePropertyFlags> tileFlags;
 };
