@@ -158,7 +158,8 @@ namespace
         return best;
     }
 
-    bool LoadTilesetFromTsx(const std::filesystem::path& tsxPath,
+    bool LoadTilesetFromElement(const tinyxml2::XMLElement* tilesetElement,
+        const std::filesystem::path& imageBaseDir,
         int firstGid,
         int fallbackTileW,
         int fallbackTileH,
@@ -166,47 +167,31 @@ namespace
     {
         using namespace tinyxml2;
 
-        XMLDocument tsxDoc;
-        const XMLError tsxErr = tsxDoc.LoadFile(tsxPath.string().c_str());
-        if (tsxErr != XML_SUCCESS)
-        {
-            std::cerr << "Failed to load TSX: " << tsxPath << " error=" << tsxDoc.ErrorStr() << "\n";
-            return false;
-        }
-
-        XMLElement* tsxTileset = tsxDoc.FirstChildElement("tileset");
-        if (!tsxTileset)
-        {
-            std::cerr << "TSX missing <tileset> root element\n";
-            return false;
-        }
-
         outDef = TilesetDef{};
         outDef.firstGid = firstGid;
-        outDef.tileW = tsxTileset->IntAttribute("tilewidth", fallbackTileW);
-        outDef.tileH = tsxTileset->IntAttribute("tileheight", fallbackTileH);
-        outDef.columns = tsxTileset->IntAttribute("columns", 0);
-        outDef.tileCount = tsxTileset->IntAttribute("tilecount", 0);
+        outDef.tileW = tilesetElement->IntAttribute("tilewidth", fallbackTileW);
+        outDef.tileH = tilesetElement->IntAttribute("tileheight", fallbackTileH);
+        outDef.columns = tilesetElement->IntAttribute("columns", 0);
+        outDef.tileCount = tilesetElement->IntAttribute("tilecount", 0);
 
-        XMLElement* image = tsxTileset->FirstChildElement("image");
+        XMLElement* image = tilesetElement->FirstChildElement("image");
         if (!image)
         {
-            std::cerr << "TSX missing <image> element\n";
+            std::cerr << "Tileset missing <image> element\n";
             return false;
         }
 
         const char* imageSource = image->Attribute("source");
         if (!imageSource)
         {
-            std::cerr << "TSX image missing source attribute\n";
+            std::cerr << "Tileset image missing source attribute\n";
             return false;
         }
 
         outDef.imageW = image->IntAttribute("width", 0);
         outDef.imageH = image->IntAttribute("height", 0);
 
-        const std::filesystem::path tsxDir = tsxPath.parent_path();
-        outDef.imagePath = (tsxDir / imageSource).lexically_normal().string();
+        outDef.imagePath = (imageBaseDir / imageSource).lexically_normal().string();
 
         if (outDef.tileCount <= 0)
         {
@@ -221,7 +206,7 @@ namespace
                 outDef.tileCount = outDef.columns * rows;
         }
 
-        for (XMLElement* tile = tsxTileset->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
+        for (XMLElement* tile = tilesetElement->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
         {
             const int tileId = tile->IntAttribute("id", -1);
             if (tileId < 0)
@@ -262,6 +247,33 @@ namespace
         }
 
         return true;
+    }
+
+    bool LoadTilesetFromTsx(const std::filesystem::path& tsxPath,
+        int firstGid,
+        int fallbackTileW,
+        int fallbackTileH,
+        TilesetDef& outDef)
+    {
+        using namespace tinyxml2;
+
+        XMLDocument tsxDoc;
+        const XMLError tsxErr = tsxDoc.LoadFile(tsxPath.string().c_str());
+        if (tsxErr != XML_SUCCESS)
+        {
+            std::cerr << "Failed to load TSX: " << tsxPath << " error=" << tsxDoc.ErrorStr() << "\n";
+            return false;
+        }
+
+        XMLElement* tsxTileset = tsxDoc.FirstChildElement("tileset");
+        if (!tsxTileset)
+        {
+            std::cerr << "TSX missing <tileset> root element\n";
+            return false;
+        }
+
+        const std::filesystem::path tsxDir = tsxPath.parent_path();
+        return LoadTilesetFromElement(tsxTileset, tsxDir, firstGid, fallbackTileW, fallbackTileH, outDef);
     }
 }
 
@@ -322,16 +334,18 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     {
         const int firstGid = tileset->IntAttribute("firstgid", 1);
         const char* tsxSource = tileset->Attribute("source");
-        if (!tsxSource)
-        {
-            std::cerr << "Tileset is expected to be external (.tsx) but no source was provided\n";
-            return false;
-        }
-
-        const std::filesystem::path tsxPath = (tmxDir / tsxSource).lexically_normal();
         TilesetDef tilesetDef{};
-        if (!LoadTilesetFromTsx(tsxPath, firstGid, mapData.tileW, mapData.tileH, tilesetDef))
-            return false;
+        if (tsxSource)
+        {
+            const std::filesystem::path tsxPath = (tmxDir / tsxSource).lexically_normal();
+            if (!LoadTilesetFromTsx(tsxPath, firstGid, mapData.tileW, mapData.tileH, tilesetDef))
+                return false;
+        }
+        else
+        {
+            if (!LoadTilesetFromElement(tileset, tmxDir, firstGid, mapData.tileW, mapData.tileH, tilesetDef))
+                return false;
+        }
 
         mapData.tilesets.push_back(std::move(tilesetDef));
     }
