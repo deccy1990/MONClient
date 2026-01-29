@@ -46,7 +46,6 @@ bool TileResolver::Resolve(uint32_t gid, float animationTimeMs, ResolvedTile& ou
 
     const int resolvedId = runtime.tileset.ResolveTileId(localId, animationTimeMs);
 
-    outResolved.textureId = runtime.textureId;
     outResolved.tilesetIndex = tilesetIndex;
     outResolved.localId = resolvedId;
     outResolved.isFullTexture = false;
@@ -54,12 +53,17 @@ bool TileResolver::Resolve(uint32_t gid, float animationTimeMs, ResolvedTile& ou
 
     if (def.isImageCollection)
     {
-        auto imageIt = def.tileImages.find(resolvedId);
-        if (imageIt != def.tileImages.end())
-        {
-            outResolved.sizePx = glm::vec2(static_cast<float>(imageIt->second.w),
-                static_cast<float>(imageIt->second.h));
-        }
+        const auto imageIt = def.tileImages.find(resolvedId);
+        if (imageIt == def.tileImages.end())
+            return false;
+
+        const auto textureIt = runtime.tileTextures.find(resolvedId);
+        if (textureIt == runtime.tileTextures.end())
+            return false;
+
+        outResolved.textureId = textureIt->second;
+        outResolved.sizePx = glm::vec2(static_cast<float>(imageIt->second.w),
+            static_cast<float>(imageIt->second.h));
 
         outResolved.uvMin = glm::vec2(0.0f, 0.0f);
         outResolved.uvMax = glm::vec2(1.0f, 1.0f);
@@ -67,6 +71,7 @@ bool TileResolver::Resolve(uint32_t gid, float animationTimeMs, ResolvedTile& ou
     }
     else
     {
+        outResolved.textureId = runtime.textureId;
         glm::vec2 uvMin, uvMax;
         runtime.tileset.GetUV(resolvedId, uvMin, uvMax);
         outResolved.uvMin = uvMin;
