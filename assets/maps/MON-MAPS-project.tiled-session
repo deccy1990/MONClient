@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "StarterZone.tmx",
+    "activeFile": "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
     "expandedProjectPaths": [
         "."
     ],
@@ -16,12 +16,44 @@
         "#Floor_Grass_01": {
             "scaleInEditor": 1
         },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx": {
+            "scale": 1.11328125,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 831.7754385964912,
+                "y": 415.88771929824566
+            }
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_11-128x128": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_13-128x128": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_20": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Green": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Pink": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Red": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Tree01_0001": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/tree.tsx": {
+            "scaleInDock": 1
+        },
         "StarterZone.tmx": {
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 785,
-                "y": 408
+                "x": 848,
+                "y": 523.5
             }
         },
         "StarterZone.tmx#Autumn_Body_Spritesheet": {
@@ -67,12 +99,14 @@
     "map.width": 32,
     "openFiles": [
         "StarterZone.tmx",
-        "tree.tsx"
+        "tree.tsx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx"
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
+        "StarterZone.tmx",
         "tree.tsx",
-        "StarterZone.tmx"
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx"
     ],
     "tileset.embedInMap": true,
     "tileset.lastUsedFormat": "tsx",
