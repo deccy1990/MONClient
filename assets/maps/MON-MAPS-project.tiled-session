@@ -17,11 +17,11 @@
             "scaleInEditor": 1
         },
         "StarterZone.tmx": {
-            "scale": 2,
+            "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 807,
-                "y": 266
+                "x": 785,
+                "y": 408
             }
         },
         "StarterZone.tmx#Autumn_Body_Spritesheet": {
