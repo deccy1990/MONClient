@@ -44,20 +44,6 @@ struct Texture2D
     int height = 0;
 };
 
-static glm::vec2 TiledIsoPixelsToEngineIsoPixels(const glm::vec2& tiledPx,
-    int mapH,
-    int tileW,
-    int tileH,
-    const glm::vec2& mapOrigin)
-{
-    const float halfW = tileW * 0.5f;
-    // Tiled shifts isometric maps right so minX >= 0. Undo it.
-    glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
-
-    // Engine iso origin is mapOrigin
-    return mapOrigin + tiledIsoUnshift + tiledPx;
-}
-
 
 /*
     ============================================
@@ -847,19 +833,10 @@ int main()
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
         const int mapH = loadedMap.mapData.height;
+        const float objhalfW = loadedMap.mapData.tileW * 0.5f;
 
-        // tile size (map tile)
-        const float tileWf = (float)loadedMap.mapData.tileW;
-        const float tileHf = (float)loadedMap.mapData.tileH;
-        const float objhalfW = tileWf * 0.5f;
-
-        // Tiled shifts iso maps right so minX >= 0. Undo that.
+        // Undo Tiled's iso X shift
         const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
-
-        // IMPORTANT:
-        // If in Tiled tileset properties you set Object Alignment = Bottom,
-        // then tile-object x,y is bottom-center and this should be true.
-        const bool tiledTileObjectsAreBottomCenter = false;
 
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
@@ -867,21 +844,12 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            // Prefer real image size if resolver knows it (best for image-collection tilesets)
-            glm::vec2 drawSize = resolved.sizePx;
-            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
-                drawSize = instance.size; // fallback (TMX object width/height or tileset max)
-
+            glm::vec2 drawSize = instance.size;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // TMX tile-object x,y in "map pixel space"
-            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // If Tiled is giving bottom-left, convert to bottom-center using the OBJECT width,
-            // NOT the tile width.
-            if (!tiledTileObjectsAreBottomCenter)
-                anchor.x += drawSize.x * 0.5f;
+            glm::vec2 bottomCenter =
+                mapOrigin + tiledIsoUnshift + instance.worldPos;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
@@ -889,14 +857,12 @@ int main()
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // bottom-center -> top-left
-            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
-
-            // depth from feet (bottom-center)
-            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
+            cmd.posPx = bottomCenter - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            cmd.depthKey = DepthFromFeetWorldY(bottomCenter.y);
 
             renderQueue.Push(cmd);
         }
+
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
 
