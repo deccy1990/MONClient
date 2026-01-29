@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "StarterZone.tmx",
+    "activeFile": "tree.tsx",
     "expandedProjectPaths": [
         "."
     ],
@@ -20,7 +20,7 @@
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 832,
+                "x": 832.5,
                 "y": 416.5
             }
         },
@@ -53,8 +53,8 @@
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 848,
-                "y": 523.5
+                "x": 832.5,
+                "y": 415.5
             }
         },
         "StarterZone.tmx#Autumn_Body_Spritesheet": {
@@ -105,9 +105,9 @@
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
+        "StarterZone.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
-        "tree.tsx",
-        "StarterZone.tmx"
+        "tree.tsx"
     ],
     "tileset.embedInMap": true,
     "tileset.lastUsedFormat": "tsx",

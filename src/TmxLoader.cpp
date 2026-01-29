@@ -480,40 +480,24 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
 
                 if (gid != 0)
                 {
-                    TileObject tileObject{};
-                    tileObject.gid = gid;
-                    tileObject.positionPx = glm::vec2(
-                        GetFloatAttribute(object, "x", 0.0f),
-                        GetFloatAttribute(object, "y", 0.0f));
-
-                    const char* name = object->Attribute("name");
-                    const char* type = object->Attribute("type");
-                    tileObject.name = name ? name : "";
-                    tileObject.type = type ? type : "";
-
-                    mapData.tileObjects.push_back(std::move(tileObject));
-
-                    MapObjectInstance objectInstance{};
-                    objectInstance.tileIndex = gid;
-                    const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
-                    const float tileW = def ? static_cast<float>(def->tileW) : static_cast<float>(mapData.tileW);
-                    const float tileH = def ? static_cast<float>(def->tileH) : static_cast<float>(mapData.tileH);
-
+                    const float x = GetFloatAttribute(object, "x", 0.0f);
+                    const float y = GetFloatAttribute(object, "y", 0.0f);
                     const float objW = GetFloatAttribute(object, "width", 0.0f);
                     const float objH = GetFloatAttribute(object, "height", 0.0f);
 
-                    // Prefer the actual object size from TMX (your trees are 256x256)
+                    MapObjectInstance inst{};
+                    inst.tileIndex = gid;
+
+                    // raw Tiled pixel anchor (KEEP AS-IS)
+                    inst.worldPos = glm::vec2(x, y);
+
+                    // Prefer object size if present (trees: 256x256)
                     if (objW > 0.0f && objH > 0.0f)
-                        objectInstance.size = glm::vec2(objW, objH);
+                        inst.size = glm::vec2(objW, objH);
                     else
-                        objectInstance.size = glm::vec2(tileW, tileH);
+                        inst.size = glm::vec2((float)mapData.tileW, (float)mapData.tileH);
 
-                    // Keep raw Tiled pixel anchor
-                    objectInstance.worldPos = glm::vec2(
-                        GetFloatAttribute(object, "x", 0.0f),
-                        GetFloatAttribute(object, "y", 0.0f));
-
-                    mapData.objectInstances.push_back(std::move(objectInstance));
+                    mapData.objectInstances.push_back(std::move(inst));
                     continue;
                 }
 

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<tileset version="1.10" tiledversion="1.11.2" name="tree" tilewidth="256" tileheight="256" tilecount="24" columns="0">
+<tileset version="1.10" tiledversion="1.11.2" name="tree" tilewidth="256" tileheight="256" tilecount="24" columns="0" objectalignment="bottom">
  <grid orientation="orthogonal" width="1" height="1"/>
  <tile id="0">
   <image source="../Tiles/Autumn/256x256/Tree01_0001.png" width="256" height="256"/>

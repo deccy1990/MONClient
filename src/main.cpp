@@ -846,9 +846,11 @@ int main()
 
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
-        // Undo Tiled's isometric X shift (keeps X positive in TMX)
         const float objhalfW = loadedMap.mapData.tileW * 0.5f;
-        const glm::vec2 tiledIsoUnshift(-(loadedMap.mapData.height - 1) * halfW, 0.0f);
+        const int mapH = loadedMap.mapData.height;
+
+        // Tiled shifts iso maps right so minX >= 0. Undo that.
+        const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
 
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
@@ -856,28 +858,41 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            // --- SIZE: prefer the TMX object size (critical for image-collection trees)
-            glm::vec2 drawSize = instance.size; // <-- 256x256 from TMX
-            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
-                drawSize = resolved.sizePx;     // fallback only
-
+            // For image-collection objects we REQUIRE real size
+            glm::vec2 drawSize = instance.size;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // TMX tile-object x,y is BOTTOM-LEFT in Tiled's isometric pixel space
-            glm::vec2 bottomLeft = mapOrigin + tiledIsoUnshift + instance.worldPos;
+            // --- Convert TMX object position (Tiled iso pixel space) -> our iso pixel space ---
+            const float objhalfW = loadedMap.mapData.tileW * 0.5f;
+            const int mapH = loadedMap.mapData.height;
 
-            // Convert bottom-left -> top-left for rendering
-            glm::vec2 topLeft = bottomLeft - glm::vec2(0.0f, drawSize.y);
+            // Tiled shifts iso maps right so minX >= 0. Undo that.
+            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+            // Anchor = bottom point of the object in world space (pixels)
+            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // If objects are consistently half a tile off, enable this ONE line:
+            anchor.x += objhalfW;
+            // Tiled gives x,y = BOTTOM-LEFT of the image in map pixel space.
+            glm::vec2 bottomLeft = mapOrigin + tiledIsoUnshift + instance.worldPos;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
-            cmd.posPx = topLeft;
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // Depth from bottom-center of the sprite
+            // Draw position expects TOP-LEFT.
+            // Anchor is BOTTOM-CENTER, so convert.
+            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            // Convert bottom-left -> top-left.
+            cmd.posPx = bottomLeft - glm::vec2(0.0f, drawSize.y);
+
+            // Depth from feet (use anchor directly)
+            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
+            // Depth from feet (bottom-center).
             glm::vec2 feetWorld = bottomLeft + glm::vec2(drawSize.x * 0.5f, 0.0f);
             cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
 
