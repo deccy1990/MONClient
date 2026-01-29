@@ -518,7 +518,7 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             if (!node)
                 return;
 
-            const std::string tag = node->Value();
+            const std::string tag = node->Name();
             if (tag == "layer")
             {
                 ParseLayer(node);
