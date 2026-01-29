@@ -839,9 +839,18 @@ int main()
 
             glm::vec2 drawSize = resolved.sizePx;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
-                drawSize = instance.size;
-            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
-                drawSize = glm::vec2((float)tileW, (float)tileH);
+                continue;
+
+            static int dbg = 0;
+            if (dbg < 5)
+            {
+                std::cout << "OBJ gid=" << instance.tileIndex
+                          << " tex=" << resolved.textureId
+                          << " size=" << resolved.sizePx.x << "x" << resolved.sizePx.y
+                          << " uv=(" << resolved.uvMin.x << "," << resolved.uvMin.y
+                          << ")->(" << resolved.uvMax.x << "," << resolved.uvMax.y << ")\n";
+                dbg++;
+            }
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;

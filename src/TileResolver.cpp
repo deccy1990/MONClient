@@ -65,8 +65,8 @@ bool TileResolver::Resolve(uint32_t gid, float animationTimeMs, ResolvedTile& ou
         outResolved.sizePx = glm::vec2(static_cast<float>(imageIt->second.w),
             static_cast<float>(imageIt->second.h));
 
-        outResolved.uvMin = glm::vec2(0.0f, 1.0f);
-        outResolved.uvMax = glm::vec2(1.0f, 0.0f);
+        outResolved.uvMin = glm::vec2(0.0f, 0.0f);
+        outResolved.uvMax = glm::vec2(1.0f, 1.0f);
         outResolved.isFullTexture = true;
     }
     else
