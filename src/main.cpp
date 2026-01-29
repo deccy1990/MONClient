@@ -1,4 +1,4 @@
-#include <glad/glad.h>
+﻿#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -837,18 +837,23 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
+            // For image-collection objects we REQUIRE real size
             glm::vec2 drawSize = resolved.sizePx;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
+            // --- Convert TMX object position (Tiled iso pixel space) -> our iso pixel space ---
             const float halfW = loadedMap.mapData.tileW * 0.5f;
             const int mapH = loadedMap.mapData.height;
 
-            // Undo Tiled's isometric "shift right to keep X positive"
+            // Tiled shifts iso maps right so minX >= 0. Undo that.
             glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
 
-            // Tiled gives x,y as an object anchor in pixel space
+            // Anchor = bottom point of the object in world space (pixels)
             glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // If objects are consistently half a tile off, enable this ONE line:
+            anchor.x += halfW;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
@@ -856,16 +861,16 @@ int main()
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // IMPORTANT:
-            // For tile-objects, Tiled x,y acts like bottom-left of the object image.
-            // So convert bottom-left -> top-left by subtracting height only.
-            cmd.posPx = anchor - glm::vec2(0.0f, drawSize.y);
+            // Draw position expects TOP-LEFT.
+            // Anchor is BOTTOM-CENTER, so convert.
+            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
-            // Depth from the "feet" point (anchor is bottom)
+            // Depth from feet (use anchor directly)
             cmd.depthKey = DepthFromFeetWorldY(anchor.y);
 
             renderQueue.Push(cmd);
         }
+
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
 
