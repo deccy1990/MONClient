@@ -1,4 +1,4 @@
-#include <glad/glad.h>
+﻿#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 #include <iostream>
@@ -837,46 +837,40 @@ int main()
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
+            // For image-collection objects we REQUIRE real size
             glm::vec2 drawSize = resolved.sizePx;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            static int dbg = 0;
-            if (dbg < 5)
-            {
-                std::cout << "OBJ gid=" << instance.tileIndex
-                          << " tex=" << resolved.textureId
-                          << " size=" << resolved.sizePx.x << "x" << resolved.sizePx.y
-                          << " uv=(" << resolved.uvMin.x << "," << resolved.uvMin.y
-                          << ")->(" << resolved.uvMax.x << "," << resolved.uvMax.y << ")\n";
-                dbg++;
-            }
+            // --- Convert TMX object position (Tiled iso pixel space) -> our iso pixel space ---
+            const float halfW = loadedMap.mapData.tileW * 0.5f;
+            const int mapH = loadedMap.mapData.height;
+
+            // Tiled shifts iso maps right so minX >= 0. Undo that.
+            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+            // Anchor = bottom point of the object in world space (pixels)
+            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // If objects are consistently half a tile off, enable this ONE line:
+            anchor.x += halfW;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
-
-            // Tiled shifts isometric maps so all X are positive.
-            // Unshift back into our iso world space.
-            const float halfW = loadedMap.mapData.tileW * 0.5f;
-            const int mapHeight = loadedMap.mapData.height;
-            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
-
-            // Treat instance.worldPos as TMX object pixels (x,y)
-            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // Bottom-center anchor -> top-left draw position
-            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
-
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            glm::vec2 feetWorld = cmd.posPx + glm::vec2(cmd.sizePx.x * 0.5f, cmd.sizePx.y);
-            cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
+            // Draw position expects TOP-LEFT.
+            // Anchor is BOTTOM-CENTER, so convert.
+            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
+            // Depth from feet (use anchor directly)
+            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
 
             renderQueue.Push(cmd);
         }
+
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
 

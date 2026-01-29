@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
+    "activeFile": "StarterZone.tmx",
     "expandedProjectPaths": [
         "."
     ],
@@ -17,11 +17,11 @@
             "scaleInEditor": 1
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx": {
-            "scale": 1.11328125,
+            "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 831.7754385964912,
-                "y": 415.88771929824566
+                "x": 832,
+                "y": 416.5
             }
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_11-128x128": {
@@ -46,6 +46,7 @@
             "scaleInDock": 1
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/tree.tsx": {
+            "dynamicWrapping": false,
             "scaleInDock": 1
         },
         "StarterZone.tmx": {
@@ -104,9 +105,9 @@
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
-        "StarterZone.tmx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
         "tree.tsx",
-        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx"
+        "StarterZone.tmx"
     ],
     "tileset.embedInMap": true,
     "tileset.lastUsedFormat": "tsx",
