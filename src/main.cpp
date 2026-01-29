@@ -841,39 +841,28 @@ int main()
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            static int dbg = 0;
-            if (dbg < 5)
-            {
-                std::cout << "OBJ gid=" << instance.tileIndex
-                          << " tex=" << resolved.textureId
-                          << " size=" << resolved.sizePx.x << "x" << resolved.sizePx.y
-                          << " uv=(" << resolved.uvMin.x << "," << resolved.uvMin.y
-                          << ")->(" << resolved.uvMax.x << "," << resolved.uvMax.y << ")\n";
-                dbg++;
-            }
+            const float halfW = loadedMap.mapData.tileW * 0.5f;
+            const int mapH = loadedMap.mapData.height;
+
+            // Undo Tiled's isometric "shift right to keep X positive"
+            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
+
+            // Tiled gives x,y as an object anchor in pixel space
+            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
 
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
-
-            // Tiled shifts isometric maps so all X are positive.
-            // Unshift back into our iso world space.
-            const float halfW = loadedMap.mapData.tileW * 0.5f;
-            const int mapHeight = loadedMap.mapData.height;
-            glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
-
-            // Treat instance.worldPos as TMX object pixels (x,y)
-            glm::vec2 anchor = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // Bottom-center anchor -> top-left draw position
-            cmd.posPx = anchor - glm::vec2(drawSize.x * 0.5f, drawSize.y);
-
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            glm::vec2 feetWorld = cmd.posPx + glm::vec2(cmd.sizePx.x * 0.5f, cmd.sizePx.y);
-            cmd.depthKey = DepthFromFeetWorldY(feetWorld.y);
+            // IMPORTANT:
+            // For tile-objects, Tiled x,y acts like bottom-left of the object image.
+            // So convert bottom-left -> top-left by subtracting height only.
+            cmd.posPx = anchor - glm::vec2(0.0f, drawSize.y);
 
+            // Depth from the "feet" point (anchor is bottom)
+            cmd.depthKey = DepthFromFeetWorldY(anchor.y);
 
             renderQueue.Push(cmd);
         }
