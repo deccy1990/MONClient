@@ -1,9 +1,20 @@
-﻿#include <glad/glad.h>
+﻿// main.cpp (cleaned + corrected for compile + consistent iso/object math)
+
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include <iostream>
-#include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
 #include "tinyxml2.h"
 
 // Engine modules
@@ -18,15 +29,8 @@
 #include "PlayerController.h"
 #include "SpriteSheet.h"
 #include "TmxLoader.h"
-#include <algorithm>
-#include <cctype>
-#include <cmath>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <vector>
 
-// stb_image (ONLY define implementation in ONE .cpp file  main.cpp is a good choice)
+// stb_image (ONLY define implementation in ONE .cpp file — main.cpp is a good choice)
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -43,7 +47,6 @@ struct Texture2D
     int width = 0;
     int height = 0;
 };
-
 
 /*
     ============================================
@@ -90,19 +93,32 @@ void main()
 */
 static void framebuffer_size_callback(GLFWwindow* /*window*/, int width, int height)
 {
-    // Keep OpenGL viewport aligned with window framebuffer size
     glViewport(0, 0, width, height);
 }
 
-static glm::vec2 GridToIsoTopLeft(const glm::vec2& gridPos, float tileW, float tileH, const glm::vec2& mapOrigin)
+/*
+    ============================================
+    Iso helpers
+    ============================================
+*/
+
+// MUST match TileMap.cpp: mapOrigin(viewportW * 0.5f, 60.0f)
+static glm::vec2 ComputeMapOrigin(int viewportW)
 {
-    float halfW = tileW * 0.5f;
-    float halfH = tileH * 0.5f;
-    float isoX = (gridPos.x - gridPos.y) * halfW;
-    float isoY = (gridPos.x + gridPos.y) * halfH;
+    return glm::vec2(viewportW * 0.5f, 60.0f);
+}
+
+// Grid -> iso tile TOP-LEFT (engine world)
+static glm::vec2 GridToIsoTopLeft(const glm::vec2& gridPos, int tileW, int tileH, const glm::vec2& mapOrigin)
+{
+    const float halfW = tileW * 0.5f;
+    const float halfH = tileH * 0.5f;
+    const float isoX = (gridPos.x - gridPos.y) * halfW;
+    const float isoY = (gridPos.x + gridPos.y) * halfH;
     return glm::vec2(isoX, isoY) + mapOrigin;
 }
 
+// iso TOP-LEFT pixels (in iso space) -> grid (for debugging)
 static glm::vec2 IsoTopLeftPixelsToGrid(const glm::vec2& isoTopLeftPx, int tileW, int tileH)
 {
     const float halfW = tileW * 0.5f;
@@ -113,7 +129,21 @@ static glm::vec2 IsoTopLeftPixelsToGrid(const glm::vec2& isoTopLeftPx, int tileW
     return { gridX, gridY };
 }
 
-static glm::vec2 SpawnPixelToGrid(const glm::vec2& posPx, int tileW, int tileH)
+// Tiled isometric maps often store object x/y in the same "shifted" iso pixel space used to keep minX >= 0.
+// Convert TMX pixel coord (shifted iso space) -> engine world space.
+static glm::vec2 TiledIsoPixelsToEngineWorld(const glm::vec2& tiledPx, int mapH, int tileW, const glm::vec2& mapOrigin)
+{
+    const float halfW = tileW * 0.5f;
+    const glm::vec2 unshift(-(mapH - 1) * halfW, 0.0f);
+    return mapOrigin + unshift + tiledPx;
+}
+
+/*
+    ============================================
+    Misc helpers
+    ============================================
+*/
+static glm::vec2 SpawnPixelToGrid_Ortho(const glm::vec2& posPx, int tileW, int tileH)
 {
     return glm::vec2(posPx.x / tileW, posPx.y / tileH);
 }
@@ -174,20 +204,16 @@ static unsigned int CreateProgram(const char* vsSrc, const char* fsSrc)
     ============================================
     Texture loading
     ============================================
-    - Loads PNG/JPG into OpenGL
-    - Returns Texture2D {id, width, height}
 */
 static Texture2D LoadTextureRGBA(const char* path, bool flipY)
 {
     Texture2D tex{};
 
-    // Control vertical flip per-texture
     stbi_set_flip_vertically_on_load(flipY);
 
     glGenTextures(1, &tex.id);
     glBindTexture(GL_TEXTURE_2D, tex.id);
 
-    // Pixel-art friendly sampling
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -197,180 +223,16 @@ static Texture2D LoadTextureRGBA(const char* path, bool flipY)
     unsigned char* data = stbi_load(path, &tex.width, &tex.height, &channels, 4);
     if (!data)
     {
-        std::cerr << "Failed to load texture '" << path
-            << "': " << stbi_failure_reason() << "\n";
+        std::cerr << "Failed to load texture '" << path << "': " << stbi_failure_reason() << "\n";
         tex.id = 0;
         return tex;
     }
 
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA8,
-        tex.width,
-        tex.height,
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        data
-    );
-
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, tex.width, tex.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
     glGenerateMipmap(GL_TEXTURE_2D);
     stbi_image_free(data);
 
     return tex;
-}
-
-// Loads a CSV of integers into a flat vector (row-major).
-// Returns true on success and outputs width/height.
-static bool LoadCSVIntGrid(const std::string& path,
-    std::vector<int>& out,
-    int& outW,
-    int& outH)
-{
-    std::ifstream file(path);
-    if (!file.is_open())
-    {
-        std::cerr << "Failed to open CSV: " << path << "\n";
-        return false;
-    }
-
-    std::vector<int> values;
-    std::string line;
-
-    int width = -1;
-    int height = 0;
-
-    while (std::getline(file, line))
-    {
-        if (line.empty())
-            continue;
-
-        std::stringstream ss(line);
-        std::string cell;
-
-        int rowCount = 0;
-
-        while (std::getline(ss, cell, ','))
-        {
-            // Trim spaces (optional but helps with hand-edited CSVs)
-            while (!cell.empty() && (cell.back() == '\r' || cell.back() == ' ' || cell.back() == '\t'))
-                cell.pop_back();
-            size_t start = 0;
-            while (start < cell.size() && (cell[start] == ' ' || cell[start] == '\t'))
-                start++;
-
-            int v = std::stoi(cell.substr(start));
-            values.push_back(v);
-            rowCount++;
-        }
-
-        if (width == -1) width = rowCount;
-        else if (rowCount != width)
-        {
-            std::cerr << "CSV row width mismatch in " << path << "\n";
-            return false;
-        }
-
-        height++;
-    }
-
-    if (width <= 0 || height <= 0)
-    {
-        std::cerr << "CSV empty/invalid: " << path << "\n";
-        return false;
-    }
-
-    out = std::move(values);
-    outW = width;
-    outH = height;
-    return true;
-}
-
-// ------------------------------------
-// TMX test: load and print basic map info
-// ------------------------------------
-static bool DebugLoadTMX(const char* tmxPath)
-{
-    using namespace tinyxml2;
-
-    XMLDocument doc;
-    XMLError err = doc.LoadFile(tmxPath);
-    if (err != XML_SUCCESS)
-    {
-        std::cerr << "Failed to load TMX: " << tmxPath
-            << " error=" << doc.ErrorStr() << "\n";
-        return false;
-    }
-
-    XMLElement* map = doc.FirstChildElement("map");
-    if (!map)
-    {
-        std::cerr << "TMX missing <map> root element\n";
-        return false;
-    }
-
-    int width = map->IntAttribute("width");
-    int height = map->IntAttribute("height");
-    int tileW = map->IntAttribute("tilewidth");
-    int tileH = map->IntAttribute("tileheight");
-
-    const char* orientation = map->Attribute("orientation");
-
-    std::cout << "TMX loaded: " << tmxPath << "\n";
-    std::cout << "  orientation: " << (orientation ? orientation : "(none)") << "\n";
-    std::cout << "  map size: " << width << " x " << height << " tiles\n";
-    std::cout << "  tile size: " << tileW << " x " << tileH << " px\n";
-
-    for (XMLElement* ts = map->FirstChildElement("tileset"); ts; ts = ts->NextSiblingElement("tileset"))
-    {
-        int firstGid = ts->IntAttribute("firstgid");
-        const char* source = ts->Attribute("source");
-        const char* name = ts->Attribute("name");
-
-        std::cout << "  tileset: firstgid=" << firstGid
-            << " source=" << (source ? source : "(inline)")
-            << " name=" << (name ? name : "(none)")
-            << "\n";
-    }
-
-    for (XMLElement* layer = map->FirstChildElement("layer"); layer; layer = layer->NextSiblingElement("layer"))
-    {
-        const char* lname = layer->Attribute("name");
-        int lw = layer->IntAttribute("width");
-        int lh = layer->IntAttribute("height");
-
-        std::cout << "  layer: " << (lname ? lname : "(unnamed)")
-            << " size=" << lw << "x" << lh << "\n";
-
-        XMLElement* data = layer->FirstChildElement("data");
-        if (!data)
-        {
-            std::cout << "    (no <data>)\n";
-            continue;
-        }
-
-        const char* encoding = data->Attribute("encoding");
-        if (!encoding || std::string(encoding) != "csv")
-        {
-            std::cout << "    data encoding is not CSV (encoding="
-                << (encoding ? encoding : "(none)") << ")\n";
-            continue;
-        }
-
-        const char* csv = data->GetText();
-        if (!csv)
-        {
-            std::cout << "    (empty csv)\n";
-            continue;
-        }
-
-        std::string preview(csv);
-        if (preview.size() > 60) preview.resize(60);
-        std::cout << "    csv preview: " << preview << "...\n";
-    }
-
-    return true;
 }
 
 int main()
@@ -449,84 +311,88 @@ int main()
 
     /*
     ============================================
-    Load textures (ONCE)
+    Load tilesets + build resolver
     ============================================
-    Required files:
-    - tileset images referenced by the TMX/TSX
-    - assets/test.png    (optional sprite test)
-	- assets/player_sheet.png  (player sprite)
-	- assets/collision.png (collision debug view)
     */
-    std::vector<Texture2D> tilesetTextures;
-    std::vector<TilesetRuntime> tilesetRuntimes;
+    std::vector<Texture2D> tilesetTextures;          // sheet-based textures (optional debug)
+    std::vector<TilesetRuntime> tilesetRuntimes;     // runtime tileset defs + texture ids
 
     auto LoadTilesetsForMap = [&](const LoadedMap& mapData) -> bool
-    {
-        tilesetTextures.clear();
-        tilesetRuntimes.clear();
-        tilesetTextures.reserve(mapData.mapData.tilesets.size());
-        tilesetRuntimes.reserve(mapData.mapData.tilesets.size());
-
-        std::unordered_map<std::string, Texture2D> textureCache;
-        const bool tilesetFlipY = false;
-        auto LoadCachedTexture = [&](const std::string& path, bool flipY) -> Texture2D
         {
-            const std::string cacheKey = path + (flipY ? "|flip" : "|noflip");
-            auto it = textureCache.find(cacheKey);
-            if (it != textureCache.end())
-                return it->second;
+            tilesetTextures.clear();
+            tilesetRuntimes.clear();
 
-            Texture2D texture = LoadTextureRGBA(path.c_str(), flipY);
-            if (texture.id)
-                textureCache.emplace(cacheKey, texture);
-            return texture;
-        };
+            tilesetTextures.reserve(mapData.mapData.tilesets.size());
+            tilesetRuntimes.reserve(mapData.mapData.tilesets.size());
 
-        for (const TilesetDef& tilesetDef : mapData.mapData.tilesets)
-        {
-            if (tilesetDef.isImageCollection)
-            {
-                TileSet tileset(0, 0, tilesetDef.tileW, tilesetDef.tileH);
-                tileset.SetAnimations(tilesetDef.animations);
+            std::unordered_map<std::string, Texture2D> textureCache;
 
-                TilesetRuntime runtime{ tilesetDef, tileset, 0 };
-                for (const auto& entry : tilesetDef.tileImages)
+            auto LoadCachedTexture = [&](const std::string& path, bool flipY) -> Texture2D
                 {
-                    const int tileId = entry.first;
-                    const std::string& imagePath = entry.second.path;
-                    Texture2D texture = LoadCachedTexture(imagePath, tilesetFlipY);
+                    const std::string cacheKey = path + (flipY ? "|flip" : "|noflip");
+                    auto it = textureCache.find(cacheKey);
+                    if (it != textureCache.end())
+                        return it->second;
+
+                    Texture2D texture = LoadTextureRGBA(path.c_str(), flipY);
+                    if (texture.id)
+                        textureCache.emplace(cacheKey, texture);
+
+                    return texture;
+                };
+
+            // Important: your renderer/shader UVs expect "normal" orientation.
+            const bool tilesetFlipY = false;
+
+            for (const TilesetDef& tilesetDef : mapData.mapData.tilesets)
+            {
+                if (tilesetDef.isImageCollection)
+                {
+                    // Image collection: each tileId is its own texture.
+                    TileSet tileset(0, 0, tilesetDef.tileW, tilesetDef.tileH);
+                    tileset.SetAnimations(tilesetDef.animations);
+
+                    TilesetRuntime runtime{ tilesetDef, tileset, 0 };
+
+                    for (const auto& entry : tilesetDef.tileImages)
+                    {
+                        const int tileId = entry.first;
+                        const std::string& imagePath = entry.second.path;
+
+                        Texture2D texture = LoadCachedTexture(imagePath, tilesetFlipY);
+                        if (!texture.id)
+                        {
+                            std::cerr << "Failed to load tileset tile image: " << imagePath << "\n";
+                            return false;
+                        }
+
+                        runtime.tileTextures.emplace(tileId, texture.id);
+                    }
+
+                    tilesetRuntimes.push_back(std::move(runtime));
+                }
+                else
+                {
+                    // Sheet-based tileset: one atlas texture.
+                    Texture2D texture = LoadCachedTexture(tilesetDef.imagePath, tilesetFlipY);
                     if (!texture.id)
                     {
-                        std::cerr << "Failed to load tileset tile image: " << imagePath << "\n";
+                        std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
                         return false;
                     }
 
-                    runtime.tileTextures.emplace(tileId, texture.id);
+                    tilesetTextures.push_back(texture);
+
+                    TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
+                    tileset.SetAnimations(tilesetDef.animations);
+
+                    TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
+                    tilesetRuntimes.push_back(std::move(runtime));
                 }
-
-                tilesetRuntimes.push_back(std::move(runtime));
             }
-            else
-            {
-                Texture2D texture = LoadCachedTexture(tilesetDef.imagePath, tilesetFlipY);
-                if (!texture.id)
-                {
-                    std::cerr << "Failed to load tileset image: " << tilesetDef.imagePath << "\n";
-                    return false;
-                }
 
-                tilesetTextures.push_back(texture);
-
-                TileSet tileset(texture.width, texture.height, tilesetDef.tileW, tilesetDef.tileH);
-                tileset.SetAnimations(tilesetDef.animations);
-
-                TilesetRuntime runtime{ tilesetDef, tileset, texture.id };
-                tilesetRuntimes.push_back(std::move(runtime));
-            }
-        }
-
-        return true;
-    };
+            return true;
+        };
 
     if (!LoadTilesetsForMap(loadedMap))
     {
@@ -536,6 +402,11 @@ int main()
 
     TileResolver tileResolver(tilesetRuntimes);
 
+    /*
+    ============================================
+    Load player sprite sheet texture
+    ============================================
+    */
     Texture2D playerSheetTex = LoadTextureRGBA("assets/Playersprite/player_sheet.png", false);
     if (!playerSheetTex.id)
     {
@@ -544,14 +415,14 @@ int main()
         return -1;
     }
 
+    // IMPORTANT: fix the broken constructor lines you had ("true;" dangling)
     SpriteSheet playerSheet(
         playerSheetTex.width,
         playerSheetTex.height,
-        256,
-        314,
-        false);
-        true;
-
+        256,   // frameW
+        314,   // frameH
+        false  // flipY?
+    );
 
     /*
     ============================================
@@ -562,116 +433,128 @@ int main()
     glfwGetFramebufferSize(window, &fbW, &fbH);
 
     SpriteRenderer renderer(shaderProgram, fbW, fbH);
-
-    // Camera position is world-space top-left of viewport
     Camera2D camera({ 0.0f, 0.0f });
 
-    // Create player (fallback tile position 5,5 and sprite size 256x314)
+    /*
+    ============================================
+    Create player
+    ============================================
+    */
     Player player(playerSheetTex.id, { 5, 5 }, { 256.0f, 314.0f });
     player.SetGridPos({ 5.0f, 5.0f });
     player.SetSpriteSheet(playerSheet);
     player.SetFrame(0);
+
     PlayerController playerController(player);
 
-
-   /*
-   ============================================
-   Create TileMap
-   ============================================
-   Chosen tile size: 64x32
-   */
-    if (!tilesetTextures.empty())
-        std::cout << "tileset[0] size: " << tilesetTextures.front().width << " x " << tilesetTextures.front().height << "\n";
-
-
+    /*
+    ============================================
+    Collision grid
+    ============================================
+    */
     std::vector<int> collisionGrid(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
     auto SpawnPlayerFromMap = [&](const LoadedMap& mapData, const std::string& spawnName) -> bool
-    {
-        if (!mapData.mapData.spawns.empty())
         {
-            for (const SpawnDef& spawn : mapData.mapData.spawns)
+            // Named SpawnDef (from object type Spawn in TMX loader)
+            if (!mapData.mapData.spawns.empty())
             {
-                if (spawnName.empty() || spawn.name == spawnName)
+                for (const SpawnDef& spawn : mapData.mapData.spawns)
                 {
-                    glm::vec2 spawnGrid = SpawnPixelToGrid(spawn.posPx, tileW, tileH);
+                    if (spawnName.empty() || spawn.name == spawnName)
+                    {
+                        // NOTE: This is orthographic conversion; if your spawn positions are isometric,
+                        // use ObjectPixelsToGrid(...) instead (you already have that in TmxLoader).
+                        glm::vec2 spawnGrid = SpawnPixelToGrid_Ortho(spawn.posPx, tileW, tileH);
+
+                        spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
+                        spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
+                        player.SetGridPos(spawnGrid);
+
+                        std::cout << "Player spawn from named spawn '" << spawn.name
+                            << "' grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
+                        return true;
+                    }
+                }
+            }
+
+            // Fallback: look for object named/type PlayerSpawn/Player
+            for (const MapObject& object : mapData.mapData.objects)
+            {
+                std::string lowerName = object.name;
+                std::string lowerType = object.type;
+
+                std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                    [](unsigned char c) { return (char)std::tolower(c); });
+                std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(),
+                    [](unsigned char c) { return (char)std::tolower(c); });
+
+                if (lowerName == "playerspawn" || lowerType == "playerspawn" ||
+                    lowerName == "player" || lowerType == "player")
+                {
+                    // This uses your iso-aware helper from TmxLoader.cpp
+                    glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
+
                     spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
                     spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
                     player.SetGridPos(spawnGrid);
-                    std::cout << "Player spawn from named spawn '" << spawn.name
-                              << "' grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
+
+                    std::cout << "Player spawn from object id=" << object.id
+                        << " grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
                     return true;
                 }
             }
-        }
 
-        for (const MapObject& object : mapData.mapData.objects)
-        {
-            std::string lowerName = object.name;
-            std::string lowerType = object.type;
-            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            std::transform(lowerType.begin(), lowerType.end(), lowerType.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-            if (lowerName == "playerspawn" || lowerType == "playerspawn" || lowerName == "player" || lowerType == "player")
-            {
-                glm::vec2 spawnGrid = ObjectPixelsToGrid(object.positionPx, tileW, tileH);
-                spawnGrid.x = std::clamp(spawnGrid.x, 0.0f, (float)(mapW - 1));
-                spawnGrid.y = std::clamp(spawnGrid.y, 0.0f, (float)(mapH - 1));
-                player.SetGridPos(spawnGrid);
-                std::cout << "Player spawn from object id=" << object.id
-                          << " grid=(" << spawnGrid.x << "," << spawnGrid.y << ")\n";
-                return true;
-            }
-        }
-
-        return false;
-    };
+            return false;
+        };
 
     SpawnPlayerFromMap(loadedMap, "");
 
-    // ------------------------------------
-    // Spawn sanity check
-    // ------------------------------------
-    auto IsBlockedAtSpawn = [&](int tx, int ty) -> bool
+    auto IsBlockedAt = [&](int tx, int ty) -> bool
+        {
+            if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH) return true;
+            return collisionGrid[ty * mapW + tx] != 0;
+        };
+
     {
-        if (tx < 0 || tx >= mapW || ty < 0 || ty >= mapH) return true;
-        return collisionGrid[ty * mapW + tx] != 0;
-    };
-
-    int spX = (int)std::floor(player.GetGridPos().x);
-    int spY = (int)std::floor(player.GetGridPos().y);
-
-    std::cout << "Spawn tile = (" << spX << "," << spY << ") collision="
-              << (IsBlockedAtSpawn(spX, spY) ? 1 : 0) << "\n";
-
-    auto FindFirstWalkable = [&]() -> glm::vec2
-    {
-        for (int y = 0; y < mapH; ++y)
-            for (int x = 0; x < mapW; ++x)
-                if (collisionGrid[y * mapW + x] == 0)
-                    return glm::vec2((float)x + 0.5f, (float)y + 0.5f);
-        return glm::vec2(1.0f, 1.0f);
-    };
-
-    glm::vec2 start = player.GetGridPos();
-    int sx = (int)std::floor(start.x);
-    int sy = (int)std::floor(start.y);
-
-    if (sx < 0 || sx >= mapW || sy < 0 || sy >= mapH || collisionGrid[sy * mapW + sx] != 0)
-    {
-        glm::vec2 newPos = FindFirstWalkable();
-        std::cout << "Spawn blocked, moving player to walkable tile at "
-                  << newPos.x << "," << newPos.y << "\n";
-        player.SetGridPos(newPos);
+        int spX = (int)std::floor(player.GetGridPos().x);
+        int spY = (int)std::floor(player.GetGridPos().y);
+        std::cout << "Spawn tile = (" << spX << "," << spY << ") collision=" << (IsBlockedAt(spX, spY) ? 1 : 0) << "\n";
     }
 
-    auto MakeTileLayer = [&](const std::vector<uint32_t>& tiles)
-    {
-        if ((int)tiles.size() == mapW * mapH)
-            return tiles;
+    auto FindFirstWalkable = [&]() -> glm::vec2
+        {
+            for (int y = 0; y < mapH; ++y)
+                for (int x = 0; x < mapW; ++x)
+                    if (collisionGrid[y * mapW + x] == 0)
+                        return glm::vec2((float)x + 0.5f, (float)y + 0.5f);
 
-        return std::vector<uint32_t>(mapW * mapH, 0);
-    };
+            return glm::vec2(1.0f, 1.0f);
+        };
+
+    {
+        glm::vec2 start = player.GetGridPos();
+        int sx = (int)std::floor(start.x);
+        int sy = (int)std::floor(start.y);
+
+        if (sx < 0 || sx >= mapW || sy < 0 || sy >= mapH || collisionGrid[sy * mapW + sx] != 0)
+        {
+            glm::vec2 newPos = FindFirstWalkable();
+            std::cout << "Spawn blocked, moving player to walkable tile at " << newPos.x << "," << newPos.y << "\n";
+            player.SetGridPos(newPos);
+        }
+    }
+
+    /*
+    ============================================
+    Create TileMaps (layers)
+    ============================================
+    */
+    auto MakeTileLayer = [&](const std::vector<uint32_t>& tiles)
+        {
+            if ((int)tiles.size() == mapW * mapH) return tiles;
+            return std::vector<uint32_t>(mapW * mapH, 0);
+        };
 
     TileMap groundMap(mapW, mapH, tileW, tileH);
     TileMap wallsMap(mapW, mapH, tileW, tileH);
@@ -681,80 +564,75 @@ int main()
     wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
     overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
 
+    /*
+    ============================================
+    Map changing
+    ============================================
+    */
     auto ChangeMap = [&](const std::string& path, const std::string& spawnName) -> bool
-    {
-        LoadedMap newMap;
-        if (!LoadTmxMap(path, newMap))
-            return false;
+        {
+            LoadedMap newMap;
+            if (!LoadTmxMap(path, newMap))
+                return false;
 
-        if (!LoadTilesetsForMap(newMap))
-            return false;
+            if (!LoadTilesetsForMap(newMap))
+                return false;
 
-        loadedMap = std::move(newMap);
-        tileW = loadedMap.mapData.tileW;
-        tileH = loadedMap.mapData.tileH;
-        mapW = loadedMap.mapData.width;
-        mapH = loadedMap.mapData.height;
+            loadedMap = std::move(newMap);
 
-        collisionGrid.assign(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
+            tileW = loadedMap.mapData.tileW;
+            tileH = loadedMap.mapData.tileH;
+            mapW = loadedMap.mapData.width;
+            mapH = loadedMap.mapData.height;
 
-        groundMap = TileMap(mapW, mapH, tileW, tileH);
-        wallsMap = TileMap(mapW, mapH, tileW, tileH);
-        overheadMap = TileMap(mapW, mapH, tileW, tileH);
+            collisionGrid.assign(loadedMap.mapData.collision.begin(), loadedMap.mapData.collision.end());
 
-        groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.groundGids), true, true);
-        wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
-        overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
+            groundMap = TileMap(mapW, mapH, tileW, tileH);
+            wallsMap = TileMap(mapW, mapH, tileW, tileH);
+            overheadMap = TileMap(mapW, mapH, tileW, tileH);
 
-        if (!SpawnPlayerFromMap(loadedMap, spawnName))
-            player.SetGridPos({ 5.0f, 5.0f });
+            groundMap.AddLayer("Ground", MakeTileLayer(loadedMap.mapData.groundGids), true, true);
+            wallsMap.AddLayer("Walls", MakeTileLayer(loadedMap.mapData.wallsGids), true, true);
+            overheadMap.AddLayer("Overhead", MakeTileLayer(loadedMap.mapData.overheadGids), true, true);
 
-        camera.SetPosition({ 0.0f, 0.0f });
-        return true;
-    };
+            if (!SpawnPlayerFromMap(loadedMap, spawnName))
+                player.SetGridPos({ 5.0f, 5.0f });
 
+            camera.SetPosition({ 0.0f, 0.0f });
+            return true;
+        };
 
-
-        /*
-       ============================================
-       Main loop
-       ============================================
-        */
+    /*
+    ============================================
+    Main loop
+    ============================================
+    */
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
-        // ------------------------------------
-        // deltaTime (real)
-        // ------------------------------------
+        // deltaTime
         static double lastTime = glfwGetTime();
         double now = glfwGetTime();
         float deltaTime = (float)(now - lastTime);
         lastTime = now;
-
-        // Safety clamp (avoid huge jumps after breakpoints/tab-out)
         if (deltaTime > 0.05f) deltaTime = 0.05f;
 
         static float animationTimeMs = 0.0f;
         animationTimeMs += deltaTime * 1000.0f;
 
-        // ------------------------------------
-        // Update framebuffer size (projection depends on it)
-        // ------------------------------------
+        // framebuffer / projection updates
         glfwGetFramebufferSize(window, &fbW, &fbH);
         renderer.SetScreenSize(fbW, fbH);
 
-        // ------------------------------------
-        // Clear
-        // ------------------------------------
+        // clear
         glClearColor(0.08f, 0.08f, 0.10f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
+        // input/movement
         playerController.Update(window, deltaTime, mapW, mapH, collisionGrid);
 
-        // ------------------------------------
-        // Door trigger (press E inside door rect)
-        // ------------------------------------
+        // Door trigger (press E inside door rect) — NOTE: this assumes door rect + feet are same space (may need iso conversion later)
         static bool wasE = false;
         bool eDown = glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
         bool ePressed = eDown && !wasE;
@@ -780,121 +658,95 @@ int main()
                 std::cerr << "Failed to change map to " << activeDoor->targetMap << "\n";
         }
 
-        glm::vec2 pos = player.GetGridPos();
-
-        // ------------------------------------
-        // Camera follow with dead-zone + smoothing
-        // ------------------------------------
+        // Camera follow (dead-zone + smoothing)
+        const glm::vec2 mapOrigin = ComputeMapOrigin(fbW);
         const float halfW = tileW * 0.5f;
         const float halfH = tileH * 0.5f;
 
-        // Player iso tile top-left (world)
-        float isoX = (pos.x - pos.y) * halfW;
-        float isoY = (pos.x + pos.y) * halfH;
+        // Player iso tile top-left
+        glm::vec2 playerTileTopLeft = GridToIsoTopLeft(playerGrid, tileW, tileH, mapOrigin);
 
-        // Must match TileMap.cpp origin
-        glm::vec2 mapOrigin(fbW * 0.5f, 60.0f);
-
-        // Tile top-left world pos for the player (same convention as tiles)
-        glm::vec2 playerTileTopLeft = glm::vec2(isoX, isoY) + mapOrigin;
-
-        // "Feet" point is best for camera focus (bottom-center of tile)
+        // Player feet point (bottom-center of the tile)
         glm::vec2 playerWorldFeet = playerTileTopLeft + glm::vec2(tileW * 0.5f, (float)tileH);
 
-        // Current camera center in world coords
         glm::vec2 camPos = camera.GetPosition();
         glm::vec2 halfView((float)fbW * 0.5f, (float)fbH * 0.5f);
         glm::vec2 camCenter = camPos + halfView;
 
-        // Dead-zone size (tune these)
-        // Larger = camera moves less often
         glm::vec2 deadZoneHalf(80.0f, 60.0f);
-
-        // Keep camera center unless player exits the dead-zone rectangle
         glm::vec2 desiredCenter = camCenter;
         glm::vec2 delta = playerWorldFeet - camCenter;
 
         if (delta.x > deadZoneHalf.x) desiredCenter.x = playerWorldFeet.x - deadZoneHalf.x;
         if (delta.x < -deadZoneHalf.x) desiredCenter.x = playerWorldFeet.x + deadZoneHalf.x;
-
         if (delta.y > deadZoneHalf.y) desiredCenter.y = playerWorldFeet.y - deadZoneHalf.y;
         if (delta.y < -deadZoneHalf.y) desiredCenter.y = playerWorldFeet.y + deadZoneHalf.y;
 
-        // Desired camera top-left from desired center
         glm::vec2 targetCamPos = desiredCenter - halfView;
 
-        // Smooth camera follow (frame-rate independent)
-        const float cameraFollowStrength = 10.0f; // slightly lower feels nicer with dead-zone
-        float t = 1.0f - std::exp(-cameraFollowStrength * deltaTime);
-
-        camPos = camPos + (targetCamPos - camPos) * t;
+        const float cameraFollowStrength = 10.0f;
+        float lerpT = 1.0f - std::exp(-cameraFollowStrength * deltaTime);
+        camPos = camPos + (targetCamPos - camPos) * lerpT;
         camera.SetPosition(camPos);
 
-
-        // ------------------------------------
-        // Draw world
-        // ------------------------------------
+        /*
+        ============================================
+        Draw world
+        ============================================
+        */
         groundMap.DrawGround(renderer, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
         RenderQueue renderQueue;
         renderQueue.Clear();
         renderQueue.Reserve(2048);
 
+        // Walls go into queue for depth sort
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
-
-
-        // ------------------------------------
-   // Object instances (tile objects from TMX)
-   // TMX x,y = bottom-center (tileset Object Alignment = Bottom)
-   // ------------------------------------
+        /*
+        ============================================
+        Tile objects from TMX (image collection trees, etc.)
+        Assumption: TMX x,y is BOTTOM-CENTER (because tileset Object Alignment = Bottom).
+        And TMX x,y is in Tiled's shifted iso pixel space.
+        ============================================
+        */
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
             ResolvedTile resolved{};
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
-            // MUST use TMX object size (trees = 256x256)
             glm::vec2 drawSize = instance.size;
+            if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
+                drawSize = resolved.sizePx;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // Undo Tiled's iso X shift (Tiled keeps minX >= 0)
-            const float halfW = tileW * 0.5f;
-            const glm::vec2 tiledIsoUnshift(-(loadedMap.mapData.height - 1) * halfW, 0.0f);
+            // TMX tile-object x,y = bottom-center (objectalignment="bottom")
+            glm::vec2 bottomCenterWorld = mapOrigin + instance.worldPos;
 
-            // TMX x,y is bottom-center in shifted iso pixel space
-            glm::vec2 bottomCenterWorld = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // ---------------------------
-            // Debug prints (first N only)
-            // ---------------------------
+            // Debug (keep this!)
             static int printed = 0;
-            if (printed < 12)
+            if (printed < 8)
             {
                 std::cout
                     << "OBJ gid=" << instance.tileIndex
-                    << " pos=(" << instance.worldPos.x << "," << instance.worldPos.y << ")"
-                    << " size=(" << drawSize.x << "," << drawSize.y << ")\n"
-                    << "  mapOrigin=(" << mapOrigin.x << "," << mapOrigin.y << ")\n"
-                    << "  unshift=(" << tiledIsoUnshift.x << "," << tiledIsoUnshift.y << ")\n"
-                    << "  bottomCenterWorld=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")\n";
+                    << " bottomCenterWorld=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")"
+                    << " size=(" << drawSize.x << "," << drawSize.y << ")\n";
                 printed++;
             }
 
-            // ---------------------------
-            // Render command
-            // ---------------------------
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            // bottom-center -> top-left
-            cmd.posPx = bottomCenterWorld - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            // bottom-center → top-left
+            cmd.posPx = bottomCenterWorld
+                - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
-            // Depth from feet (bottom-center)
+            // Depth from feet
             cmd.depthKey = DepthFromFeetWorldY(bottomCenterWorld.y);
 
             renderQueue.Push(cmd);
@@ -902,20 +754,17 @@ int main()
 
 
 
-
-
-
+        // Player into queue (depth sort)
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
 
         renderQueue.SortByDepthStable();
         for (const RenderCmd& cmd : renderQueue.Items())
-        {
             renderer.Draw(cmd.texture, cmd.posPx, cmd.sizePx, camera, cmd.uvMin, cmd.uvMax);
-        }
 
+        // Overhead layer
         overheadMap.DrawOverhead(renderer, tileResolver, camera, { fbW, fbH }, animationTimeMs);
-        glfwSwapBuffers(window);
 
+        glfwSwapBuffers(window);
     }
 
     glfwTerminate();

@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "StarterZone.tmx",
+    "activeFile": "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx",
     "expandedProjectPaths": [
         "."
     ],
@@ -16,15 +16,18 @@
         "#Floor_Grass_01": {
             "scaleInEditor": 1
         },
+        "#Grass_11-128x128": {
+            "dynamicWrapping": false
+        },
+        "#tree2": {
+            "dynamicWrapping": true
+        },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx": {
-            "expandedObjectLayers": [
-                7
-            ],
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 803,
-                "y": 437
+                "x": 832,
+                "y": 415.5
             }
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_11-128x128": {
@@ -51,14 +54,66 @@
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#box": {
             "scaleInDock": 1
         },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#tree2": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx": {
+            "expandedObjectLayers": [
+                5
+            ],
+            "scale": 1.0710336538461538,
+            "selectedLayer": 4,
+            "viewCenter": {
+                "x": 831.9066322522725,
+                "y": 415.48647738749867
+            }
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx#Grass_11-128x128": {
+            "dynamicWrapping": false,
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx#tree2": {
+            "dynamicWrapping": true,
+            "scaleInDock": 1,
+            "scaleInEditor": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx": {
+            "scale": 1.0710336538461538,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 831.9066322522725,
+                "y": 416.4201548647739
+            }
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Grass_11-128x128": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Grass_13-128x128": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Grass_20": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Green": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Pink": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Red": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#Tree01_0001": {
+            "scaleInDock": 1
+        },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx#box": {
+            "scaleInDock": 1
+        },
         "E:/MONClient/out/build/x64-Debug/assets/maps/tree.tsx": {
             "dynamicWrapping": false,
             "scaleInDock": 1
         },
         "StarterZone.tmx": {
-            "expandedObjectLayers": [
-                7
-            ],
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
@@ -107,32 +162,55 @@
         "StarterZone.tmx#teleport_128": {
             "scaleInDock": 1
         },
+        "StarterZone.tmx#tree2": {
+            "dynamicWrapping": true,
+            "scaleInDock": 1
+        },
+        "StarterZone2.tmx": {
+            "scale": 0.75,
+            "selectedLayer": 4,
+            "viewCenter": {
+                "x": 977.3333333333331,
+                "y": 205.33333333333337
+            }
+        },
+        "StarterZone2.tmx#Grass_11-128x128": {
+            "dynamicWrapping": false,
+            "scaleInDock": 1
+        },
+        "StarterZone2.tmx#tree2": {
+            "dynamicWrapping": true,
+            "scaleInDock": 1
+        },
         "tree.tsx": {
             "dynamicWrapping": true,
             "scaleInDock": 1,
             "scaleInEditor": 1
         }
     },
-    "last.imagePath": "C:/MONClient/assets/Tiles/SBS - Isometric Object Pack/Boxes",
+    "last.imagePath": "E:/MONClient/assets/Tiles/Green/256x256",
     "map.lastUsedFormat": "tmx",
     "map.tileWidth": 64,
     "map.width": 32,
     "openFiles": [
-        "StarterZone.tmx",
-        "tree.tsx"
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx"
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
-        "tree.tsx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx",
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx",
         "StarterZone.tmx",
-        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx"
+        "StarterZone2.tmx",
+        "tree.tsx"
     ],
     "tileset.embedInMap": true,
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
-        "height": 64,
+        "height": 32,
         "width": 64
     },
-    "tileset.type": 0,
+    "tileset.type": 1,
     "tileset.useTransparentColor": false
 }
