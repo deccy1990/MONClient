@@ -17,11 +17,14 @@
             "scaleInEditor": 1
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx": {
+            "expandedObjectLayers": [
+                7
+            ],
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 832.5,
-                "y": 416.5
+                "x": 803,
+                "y": 437
             }
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_11-128x128": {
@@ -45,16 +48,22 @@
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Tree01_0001": {
             "scaleInDock": 1
         },
+        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#box": {
+            "scaleInDock": 1
+        },
         "E:/MONClient/out/build/x64-Debug/assets/maps/tree.tsx": {
             "dynamicWrapping": false,
             "scaleInDock": 1
         },
         "StarterZone.tmx": {
+            "expandedObjectLayers": [
+                7
+            ],
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 848,
-                "y": 405
+                "x": 820,
+                "y": 346
             }
         },
         "StarterZone.tmx#Autumn_Body_Spritesheet": {

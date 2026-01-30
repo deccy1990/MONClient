@@ -1,3 +1,12 @@
+// TmxLoader.cpp (paste-replace whole file)
+//
+// Fixes:
+//  - Only ONE ParseObjectGroup (with group offset support)
+//  - ParseNode carries group offsets through nested <group> using offsetx/offsety
+//  - Tile objects (gid) stored into mapData.objectInstances with TMX object width/height if present
+//  - Doors / Spawns / generic objects also receive the accumulated group offset
+//  - No stray references (door/spawn/mapObject) inside ParseNode
+
 #include "TmxLoader.h"
 
 #include "tinyxml2.h"
@@ -10,12 +19,15 @@
 #include <functional>
 #include <iostream>
 #include <sstream>
+#include <unordered_map>
+#include <vector>
 
 namespace
 {
     constexpr uint32_t TMX_FLIPPED_HORIZONTALLY_FLAG = 0x80000000u;
     constexpr uint32_t TMX_FLIPPED_VERTICALLY_FLAG = 0x40000000u;
     constexpr uint32_t TMX_FLIPPED_DIAGONALLY_FLAG = 0x20000000u;
+
     constexpr uint32_t TMX_GID_MASK =
         ~(TMX_FLIPPED_HORIZONTALLY_FLAG | TMX_FLIPPED_VERTICALLY_FLAG | TMX_FLIPPED_DIAGONALLY_FLAG);
 
@@ -23,7 +35,7 @@ namespace
     {
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
-        });
+            });
         return value;
     }
 
@@ -40,7 +52,6 @@ namespace
 
         while (std::getline(ss, cell, ','))
         {
-            // Trim whitespace/newlines around each token.
             const auto begin = cell.find_first_not_of(" \t\r\n");
             if (begin == std::string::npos)
                 continue;
@@ -178,7 +189,6 @@ namespace
         XMLElement* image = tilesetElement->FirstChildElement("image");
         if (image)
         {
-            // ---- Sheet-based tileset (existing code) ----
             const char* imageSource = image->Attribute("source");
             if (!imageSource)
             {
@@ -188,7 +198,6 @@ namespace
 
             outDef.imageW = image->IntAttribute("width", 0);
             outDef.imageH = image->IntAttribute("height", 0);
-
             outDef.imagePath = (imageBaseDir / imageSource).lexically_normal().string();
 
             if (outDef.tileCount <= 0)
@@ -206,7 +215,6 @@ namespace
         }
         else
         {
-            // ---- Image Collection tileset ----
             outDef.isImageCollection = true;
 
             for (XMLElement* tile = tilesetElement->FirstChildElement("tile");
@@ -246,7 +254,9 @@ namespace
                 outDef.tileCount = static_cast<int>(outDef.tileImages.size());
         }
 
-        for (XMLElement* tile = tilesetElement->FirstChildElement("tile"); tile; tile = tile->NextSiblingElement("tile"))
+        for (XMLElement* tile = tilesetElement->FirstChildElement("tile");
+            tile;
+            tile = tile->NextSiblingElement("tile"))
         {
             const int tileId = tile->IntAttribute("id", -1);
             if (tileId < 0)
@@ -269,7 +279,9 @@ namespace
 
             TileAnimation anim{};
 
-            for (XMLElement* frame = animation->FirstChildElement("frame"); frame; frame = frame->NextSiblingElement("frame"))
+            for (XMLElement* frame = animation->FirstChildElement("frame");
+                frame;
+                frame = frame->NextSiblingElement("frame"))
             {
                 AnimationFrame animFrame{};
                 animFrame.tileId = frame->IntAttribute("tileid", tileId);
@@ -315,7 +327,7 @@ namespace
         const std::filesystem::path tsxDir = tsxPath.parent_path();
         return LoadTilesetFromElement(tsxTileset, tsxDir, firstGid, fallbackTileW, fallbackTileH, outDef);
     }
-}
+} // namespace
 
 glm::vec2 ObjectPixelsToGrid(const glm::vec2& objectPosPx, int tileWidth, int tileHeight)
 {
@@ -325,15 +337,12 @@ glm::vec2 ObjectPixelsToGrid(const glm::vec2& objectPosPx, int tileWidth, int ti
     if (halfW <= 0.0f || halfH <= 0.0f)
         return glm::vec2(0.0f);
 
-    // Tiled's isometric object coordinates place the origin at the bottom-center of a tile.
-    // Convert that bottom-center to our tile top-left convention before inverting the iso transform.
     const float isoXTopLeft = objectPosPx.x - halfW;
     const float isoYTopLeft = objectPosPx.y - static_cast<float>(tileHeight);
 
     const float gridX = (isoXTopLeft / halfW + isoYTopLeft / halfH) * 0.5f;
     const float gridY = (isoYTopLeft / halfH - isoXTopLeft / halfW) * 0.5f;
 
-    // Place the player at the center of the tile for smoother collision behavior.
     return glm::vec2(gridX + 0.5f, gridY + 0.5f);
 }
 
@@ -370,10 +379,13 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     const std::filesystem::path tmxDir = tmxFsPath.parent_path();
 
     // --- Tilesets (.tsx)
-    for (XMLElement* tileset = map->FirstChildElement("tileset"); tileset; tileset = tileset->NextSiblingElement("tileset"))
+    for (XMLElement* tileset = map->FirstChildElement("tileset");
+        tileset;
+        tileset = tileset->NextSiblingElement("tileset"))
     {
         const int firstGid = tileset->IntAttribute("firstgid", 1);
         const char* tsxSource = tileset->Attribute("source");
+
         TilesetDef tilesetDef{};
         if (tsxSource)
         {
@@ -458,42 +470,38 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                 mapData.wallsGids = std::move(tiles);
             else if (lowerName == "overhead")
                 mapData.overheadGids = std::move(tiles);
+
             (void)visible;
         };
 
-    auto ParseObjectGroup = [&](XMLElement* objectGroup)
+    // --- Object groups (with group offsets)
+    auto ParseObjectGroup = [&](XMLElement* objectGroup, glm::vec2 groupOffsetPx)
         {
-            for (XMLElement* object = objectGroup->FirstChildElement("object"); object; object = object->NextSiblingElement("object"))
+            for (XMLElement* object = objectGroup->FirstChildElement("object");
+                object;
+                object = object->NextSiblingElement("object"))
             {
-                // TMX tile-object gid may contain flip flags in the high bits.
-                // Read it in a version-compatible way (TinyXML2 differs by version).
+                // Apply group offsets to ALL objects
+                const float x = GetFloatAttribute(object, "x", 0.0f) + groupOffsetPx.x;
+                const float y = GetFloatAttribute(object, "y", 0.0f) + groupOffsetPx.y;
+                const float w = GetFloatAttribute(object, "width", 0.0f);
+                const float h = GetFloatAttribute(object, "height", 0.0f);
+
+                // Tile object?
                 uint32_t rawGid = 0;
-
                 if (const char* gidStr = object->Attribute("gid"))
-                {
-                    // TMX stores gid as decimal text.
                     rawGid = static_cast<uint32_t>(std::strtoul(gidStr, nullptr, 10));
-                }
 
-                // Mask off flip flags (Tiled uses high bits for flipping)
-                uint32_t gid = rawGid & TMX_GID_MASK;
-
+                const uint32_t gid = rawGid & TMX_GID_MASK;
                 if (gid != 0)
                 {
-                    const float x = GetFloatAttribute(object, "x", 0.0f);
-                    const float y = GetFloatAttribute(object, "y", 0.0f);
-                    const float objW = GetFloatAttribute(object, "width", 0.0f);
-                    const float objH = GetFloatAttribute(object, "height", 0.0f);
-
                     MapObjectInstance inst{};
                     inst.tileIndex = gid;
-
-                    // raw Tiled pixel anchor (KEEP AS-IS)
                     inst.worldPos = glm::vec2(x, y);
 
-                    // Prefer object size if present (trees: 256x256)
-                    if (objW > 0.0f && objH > 0.0f)
-                        inst.size = glm::vec2(objW, objH);
+                    // Prefer real object size if present (trees = 256x256)
+                    if (w > 0.0f && h > 0.0f)
+                        inst.size = glm::vec2(w, h);
                     else
                         inst.size = glm::vec2((float)mapData.tileW, (float)mapData.tileH);
 
@@ -501,16 +509,13 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                     continue;
                 }
 
+                // Non-tile object (Door / Spawn / generic)
                 const char* name = object->Attribute("name");
                 const char* type = object->Attribute("type");
                 const std::string typeName = type ? type : "";
-                const float x = GetFloatAttribute(object, "x", 0.0f);
-                const float y = GetFloatAttribute(object, "y", 0.0f);
-                const float w = GetFloatAttribute(object, "width", 0.0f);
-                const float h = GetFloatAttribute(object, "height", 0.0f);
                 XMLElement* props = object->FirstChildElement("properties");
 
-                if (type && typeName == "Door")
+                if (!typeName.empty() && typeName == "Door")
                 {
                     DoorDef door{};
                     door.posPx = { x, y };
@@ -521,7 +526,7 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
                     continue;
                 }
 
-                if (type && typeName == "Spawn")
+                if (!typeName.empty() && typeName == "Spawn")
                 {
                     SpawnDef spawn{};
                     spawn.name = name ? name : "";
@@ -541,30 +546,42 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
             }
         };
 
-    std::function<void(XMLElement*)> ParseNode;
-    ParseNode = [&](XMLElement* node)
+    // --- Walk tree with nested group offsets
+    std::function<void(XMLElement*, glm::vec2)> ParseNode;
+
+    ParseNode = [&](XMLElement* node, glm::vec2 parentOffsetPx)
         {
             if (!node)
                 return;
 
             const std::string tag = node->Name();
+
+            // Groups can carry offsets: <group offsetx="" offsety="">
+            const float offX = GetFloatAttribute(node, "offsetx", 0.0f);
+            const float offY = GetFloatAttribute(node, "offsety", 0.0f);
+            const glm::vec2 nodeOffsetPx = parentOffsetPx + glm::vec2(offX, offY);
+
             if (tag == "layer")
             {
                 ParseLayer(node);
             }
             else if (tag == "objectgroup")
             {
-                ParseObjectGroup(node);
+                ParseObjectGroup(node, nodeOffsetPx);
             }
             else if (tag == "group")
             {
-                for (XMLElement* child = node->FirstChildElement(); child; child = child->NextSiblingElement())
-                    ParseNode(child);
+                for (XMLElement* child = node->FirstChildElement();
+                    child;
+                    child = child->NextSiblingElement())
+                {
+                    ParseNode(child, nodeOffsetPx);
+                }
             }
         };
 
     for (XMLElement* node = map->FirstChildElement(); node; node = node->NextSiblingElement())
-        ParseNode(node);
+        ParseNode(node, glm::vec2(0.0f));
 
     if (hasCollisionLayer)
         mapData.collision = std::move(collisionTiles);
@@ -573,16 +590,16 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
 
     mapData.tileFlags.assign(expectedCount, TilePropertyFlags{});
 
-    auto AccumulateTileFlags = [&](int index, uint32_t gid)
+    auto AccumulateTileFlags = [&](int index, uint32_t gidValue)
         {
-            if (gid == 0)
+            if (gidValue == 0)
                 return;
 
-            const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gid);
+            const TilesetDef* def = FindTilesetForGid(mapData.tilesets, gidValue);
             if (!def)
                 return;
 
-            const int localId = static_cast<int>(gid) - def->firstGid;
+            const int localId = static_cast<int>(gidValue) - def->firstGid;
             auto flagIt = def->tileFlags.find(localId);
             if (flagIt == def->tileFlags.end())
                 return;
@@ -611,9 +628,11 @@ bool LoadTmxMap(const std::string& tmxPath, LoadedMap& outMap)
     std::cout << "  tile size: " << mapData.tileW << " x " << mapData.tileH << " px\n";
     std::cout << "  tilesets: " << mapData.tilesets.size() << "\n";
     std::cout << "  layers: ground=" << (mapData.HasGround() ? "yes" : "no")
-              << " walls=" << (mapData.HasWalls() ? "yes" : "no")
-              << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
-              << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
+        << " walls=" << (mapData.HasWalls() ? "yes" : "no")
+        << " overhead=" << (mapData.HasOverhead() ? "yes" : "no")
+        << " collision=" << (hasCollisionLayer ? "yes" : "no") << "\n";
     std::cout << "  objects: " << mapData.objects.size() << "\n";
+    std::cout << "  tile objects: " << mapData.objectInstances.size() << "\n";
+
     return true;
 }

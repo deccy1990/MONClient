@@ -842,61 +842,67 @@ int main()
 
         wallsMap.AppendOccluders(renderQueue, tileResolver, camera, { fbW, fbH }, animationTimeMs);
 
-        const int mapH = loadedMap.mapData.height;
-        const float objhalfW = loadedMap.mapData.tileW * 0.5f;
 
-        // Undo Tiled's iso X shift
-        const glm::vec2 tiledIsoUnshift(-(mapH - 1) * halfW, 0.0f);
 
+        // ------------------------------------
+   // Object instances (tile objects from TMX)
+   // TMX x,y = bottom-center (tileset Object Alignment = Bottom)
+   // ------------------------------------
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
         {
             ResolvedTile resolved{};
             if (!tileResolver.Resolve(instance.tileIndex, animationTimeMs, resolved))
                 continue;
 
+            // MUST use TMX object size (trees = 256x256)
             glm::vec2 drawSize = instance.size;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
+            // Undo Tiled's iso X shift (Tiled keeps minX >= 0)
+            const float halfW = tileW * 0.5f;
+            const glm::vec2 tiledIsoUnshift(-(loadedMap.mapData.height - 1) * halfW, 0.0f);
+
+            // TMX x,y is bottom-center in shifted iso pixel space
+            glm::vec2 bottomCenterWorld = mapOrigin + tiledIsoUnshift + instance.worldPos;
+
+            // ---------------------------
+            // Debug prints (first N only)
+            // ---------------------------
             static int printed = 0;
-            if (printed < 8)
+            if (printed < 12)
             {
-                const glm::vec2 p = instance.worldPos;
-                const glm::vec2 sz = instance.size;
-
-                glm::vec2 isoTL_A = { p.x, p.y - (float)tileH };
-                glm::vec2 isoTL_B = { p.x - (float)tileW * 0.5f, p.y - (float)tileH };
-                glm::vec2 isoTL_C = { p.x, p.y };
-
-                glm::vec2 gA = IsoTopLeftPixelsToGrid(isoTL_A, tileW, tileH);
-                glm::vec2 gB = IsoTopLeftPixelsToGrid(isoTL_B, tileW, tileH);
-                glm::vec2 gC = IsoTopLeftPixelsToGrid(isoTL_C, tileW, tileH);
-
                 std::cout
                     << "OBJ gid=" << instance.tileIndex
-                    << " pos=(" << p.x << "," << p.y << ")"
-                    << " size=(" << sz.x << "," << sz.y << ")\n"
-                    << "  grid A(bottom-left)   = (" << gA.x << "," << gA.y << ")\n"
-                    << "  grid B(bottom-center) = (" << gB.x << "," << gB.y << ")\n"
-                    << "  grid C(top-left)      = (" << gC.x << "," << gC.y << ")\n";
-
+                    << " pos=(" << instance.worldPos.x << "," << instance.worldPos.y << ")"
+                    << " size=(" << drawSize.x << "," << drawSize.y << ")\n"
+                    << "  mapOrigin=(" << mapOrigin.x << "," << mapOrigin.y << ")\n"
+                    << "  unshift=(" << tiledIsoUnshift.x << "," << tiledIsoUnshift.y << ")\n"
+                    << "  bottomCenterWorld=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")\n";
                 printed++;
             }
 
-            glm::vec2 bottomCenter =
-                mapOrigin + tiledIsoUnshift + instance.worldPos;
-
+            // ---------------------------
+            // Render command
+            // ---------------------------
             RenderCmd cmd{};
             cmd.texture = resolved.textureId;
             cmd.sizePx = drawSize;
             cmd.uvMin = resolved.uvMin;
             cmd.uvMax = resolved.uvMax;
 
-            cmd.posPx = bottomCenter - glm::vec2(drawSize.x * 0.5f, drawSize.y);
-            cmd.depthKey = DepthFromFeetWorldY(bottomCenter.y);
+            // bottom-center -> top-left
+            cmd.posPx = bottomCenterWorld - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+
+            // Depth from feet (bottom-center)
+            cmd.depthKey = DepthFromFeetWorldY(bottomCenterWorld.y);
 
             renderQueue.Push(cmd);
         }
+
+
+
+
 
 
         player.AppendToQueue(renderQueue, playerTileTopLeft, tileW, tileH);
