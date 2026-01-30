@@ -103,6 +103,16 @@ static glm::vec2 GridToIsoTopLeft(const glm::vec2& gridPos, float tileW, float t
     return glm::vec2(isoX, isoY) + mapOrigin;
 }
 
+static glm::vec2 IsoTopLeftPixelsToGrid(const glm::vec2& isoTopLeftPx, int tileW, int tileH)
+{
+    const float halfW = tileW * 0.5f;
+    const float halfH = tileH * 0.5f;
+
+    const float gridX = (isoTopLeftPx.x / halfW + isoTopLeftPx.y / halfH) * 0.5f;
+    const float gridY = (isoTopLeftPx.y / halfH - isoTopLeftPx.x / halfW) * 0.5f;
+    return { gridX, gridY };
+}
+
 static glm::vec2 SpawnPixelToGrid(const glm::vec2& posPx, int tileW, int tileH)
 {
     return glm::vec2(posPx.x / tileW, posPx.y / tileH);
@@ -847,6 +857,31 @@ int main()
             glm::vec2 drawSize = instance.size;
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
+
+            static int printed = 0;
+            if (printed < 8)
+            {
+                const glm::vec2 p = instance.worldPos;
+                const glm::vec2 sz = instance.size;
+
+                glm::vec2 isoTL_A = { p.x, p.y - (float)tileH };
+                glm::vec2 isoTL_B = { p.x - (float)tileW * 0.5f, p.y - (float)tileH };
+                glm::vec2 isoTL_C = { p.x, p.y };
+
+                glm::vec2 gA = IsoTopLeftPixelsToGrid(isoTL_A, tileW, tileH);
+                glm::vec2 gB = IsoTopLeftPixelsToGrid(isoTL_B, tileW, tileH);
+                glm::vec2 gC = IsoTopLeftPixelsToGrid(isoTL_C, tileW, tileH);
+
+                std::cout
+                    << "OBJ gid=" << instance.tileIndex
+                    << " pos=(" << p.x << "," << p.y << ")"
+                    << " size=(" << sz.x << "," << sz.y << ")\n"
+                    << "  grid A(bottom-left)   = (" << gA.x << "," << gA.y << ")\n"
+                    << "  grid B(bottom-center) = (" << gB.x << "," << gB.y << ")\n"
+                    << "  grid C(top-left)      = (" << gC.x << "," << gC.y << ")\n";
+
+                printed++;
+            }
 
             glm::vec2 bottomCenter =
                 mapOrigin + tiledIsoUnshift + instance.worldPos;
