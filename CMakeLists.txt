@@ -17,6 +17,7 @@ add_executable(MONClient
     src/Player.cpp
     src/PlayerController.cpp
     src/TmxLoader.cpp
+    src/GameSystems.cpp
     third_party/tinyxml2/tinyxml2.cpp
 )
 
