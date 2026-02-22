@@ -1,0 +1,36 @@
+{
+  "items": [
+    {
+      "id": "weapon_training_sword",
+      "displayName": "Training Sword",
+      "type": "Weapon",
+      "maxStack": 1,
+      "value": 25,
+      "rarity": "Common"
+    },
+    {
+      "id": "armor_cloth_tunic",
+      "displayName": "Cloth Tunic",
+      "type": "Armor",
+      "maxStack": 1,
+      "value": 20,
+      "rarity": "Common"
+    },
+    {
+      "id": "consumable_minor_potion",
+      "displayName": "Minor Potion",
+      "type": "Consumable",
+      "maxStack": 20,
+      "value": 8,
+      "rarity": "Common"
+    },
+    {
+      "id": "quest_dungeon_key",
+      "displayName": "Dungeon Key",
+      "type": "Quest",
+      "maxStack": 1,
+      "value": 0,
+      "rarity": "Rare"
+    }
+  ]
+}

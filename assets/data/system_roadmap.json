@@ -1,0 +1,40 @@
+{
+  "phases": [
+    {
+      "name": "Phase 1 - Core Playable Loop",
+      "systems": [
+        "movement",
+        "combat_basic",
+        "monster_death",
+        "experience",
+        "loot_pickup"
+      ]
+    },
+    {
+      "name": "Phase 2 - Systems Layer",
+      "systems": [
+        "inventory",
+        "equipment",
+        "quest_basic"
+      ]
+    },
+    {
+      "name": "Phase 3 - World Depth",
+      "systems": [
+        "shops",
+        "dungeons",
+        "skills",
+        "boss_logic"
+      ]
+    },
+    {
+      "name": "Phase 4 - Polish",
+      "systems": [
+        "audio",
+        "effects",
+        "ui_polish",
+        "save_load"
+      ]
+    }
+  ]
+}
