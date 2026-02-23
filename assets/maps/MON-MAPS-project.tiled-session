@@ -149,6 +149,7 @@
             "scaleInDock": 1
         },
         "StarterZone.tmx#Tree01_0001": {
+            "dynamicWrapping": false,
             "scaleInDock": 0.5
         },
         "StarterZone.tmx#box": {
@@ -194,16 +195,17 @@
     "map.tileWidth": 64,
     "map.width": 4,
     "openFiles": [
-        "StarterZone.tmx"
+        "StarterZone.tmx",
+        "tree.tsx"
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
+        "tree.tsx",
         "StarterZone.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx",
-        "StarterZone2.tmx",
-        "tree.tsx"
+        "StarterZone2.tmx"
     ],
     "tileset.embedInMap": true,
     "tileset.lastUsedFormat": "tsx",
