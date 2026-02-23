@@ -698,7 +698,7 @@ int main()
         /*
         ============================================
         Tile objects from TMX (image collection trees, etc.)
-        TMX x,y is in Tiled's shifted iso pixel space.
+        Convert TMX object pixels -> grid -> iso, exactly like tiles.
         ============================================
         */
         for (const MapObjectInstance& instance : loadedMap.mapData.objectInstances)
@@ -713,42 +713,21 @@ int main()
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            const float halfW = tileW * 0.5f;
-            const glm::vec2 tiledIsoUnshift(-(loadedMap.mapData.height - 1) * halfW, 0.0f);
+            const glm::vec2 gridPos = ObjectPixelsToGrid(instance.worldPos, tileW, tileH);
+            const glm::vec2 tileTopLeftWorld = GridToIsoTopLeft(gridPos, tileW, tileH, mapOrigin);
+            const glm::vec2 bottomCenterWorld = tileTopLeftWorld + glm::vec2(tileW * 0.5f, tileH);
 
-            // Candidate A: treat TMX x,y as bottom-center (expected when objectalignment=bottom)
-            glm::vec2 bottomCenterWorld = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // Candidate B: treat TMX x,y as bottom-left (common when objects were placed weirdly)
-            glm::vec2 bottomLeftWorld = mapOrigin + tiledIsoUnshift + instance.worldPos;
-
-            // If treating as bottom-left, convert to bottom-center by adding half the object width
-            bottomLeftWorld.x += drawSize.x * 0.5f;
-
-            // Pick A for now, but print both so we can see immediately which matches Tiled
-            glm::vec2 anchorWorld = bottomCenterWorld;
-
-            const float halfW_dbg = tileW * 0.5f;
-            const glm::vec2 tiledIsoUnshift_dbg(-(loadedMap.mapData.height - 1) * halfW_dbg, 0.0f);
-
-            glm::vec2 tiledPx = instance.worldPos;                 // what TMX gave us
-            glm::vec2 unshiftedPx = tiledPx + tiledIsoUnshift_dbg; // undo Tiled's iso shift
-
-
-            // Debug (keep this!)
+            // Debug (keep this): inspect TMX object pixels -> grid -> world conversion.
             static int printed = 0;
             if (printed < 12)
             {
                 std::cout
                     << "OBJ gid=" << instance.tileIndex
-                    << " pos=(" << instance.worldPos.x << "," << instance.worldPos.y << ")"
-                    << " size=(" << drawSize.x << "," << drawSize.y << ")\n"
-                    << "  tiledPx=(" << tiledPx.x << "," << tiledPx.y << ")\n"
-                    << "  unshiftedPx=(" << unshiftedPx.x << "," << unshiftedPx.y << ")\n"
-                    << "  mapOrigin=(" << mapOrigin.x << "," << mapOrigin.y << ")\n"
-                    << "  unshift=(" << tiledIsoUnshift.x << "," << tiledIsoUnshift.y << ")\n"
-                    << "  anchor A(bottom-center)=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")\n"
-                    << "  anchor B(from bottom-left)=(" << bottomLeftWorld.x << "," << bottomLeftWorld.y << ")\n";
+                    << " tmxPx=(" << instance.worldPos.x << "," << instance.worldPos.y << ")"
+                    << " grid=(" << gridPos.x << "," << gridPos.y << ")"
+                    << " tileTopLeftWorld=(" << tileTopLeftWorld.x << "," << tileTopLeftWorld.y << ")"
+                    << " bottomCenterWorld=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")"
+                    << " size=(" << drawSize.x << "," << drawSize.y << ")\n";
                 printed++;
             }
 
@@ -759,11 +738,11 @@ int main()
             cmd.uvMax = resolved.uvMax;
 
             // bottom-center → top-left
-            cmd.posPx = anchorWorld
+            cmd.posPx = bottomCenterWorld
                 - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
             // Depth from feet
-            cmd.depthKey = DepthFromFeetWorldY(anchorWorld.y);
+            cmd.depthKey = DepthFromFeetWorldY(bottomCenterWorld.y);
 
             renderQueue.Push(cmd);
         }
