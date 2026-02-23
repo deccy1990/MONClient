@@ -3,7 +3,7 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx",
+    "activeFile": "StarterZone.tmx",
     "expandedProjectPaths": [
         "."
     ],
@@ -27,7 +27,7 @@
             "selectedLayer": 4,
             "viewCenter": {
                 "x": 832,
-                "y": 415.5
+                "y": 415
             }
         },
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx#Grass_11-128x128": {
@@ -117,8 +117,8 @@
             "scale": 1,
             "selectedLayer": 4,
             "viewCenter": {
-                "x": 820,
-                "y": 346
+                "x": 643,
+                "y": 284
             }
         },
         "StarterZone.tmx#Autumn_Body_Spritesheet": {
@@ -189,19 +189,19 @@
         }
     },
     "last.imagePath": "E:/MONClient/assets/Tiles/Green/256x256",
+    "map.height": 4,
     "map.lastUsedFormat": "tmx",
     "map.tileWidth": 64,
-    "map.width": 32,
+    "map.width": 4,
     "openFiles": [
-        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
-        "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx"
+        "StarterZone.tmx"
     ],
     "project": "MON-MAPS-project.tiled-project",
     "recentFiles": [
+        "StarterZone.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1.tmx",
         "E:/MONClient/out/build/x64-Debug/assets/maps/StarterZone1 (2).tmx",
-        "StarterZone.tmx",
         "StarterZone2.tmx",
         "tree.tsx"
     ],

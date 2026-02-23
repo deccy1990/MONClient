@@ -129,14 +129,6 @@ static glm::vec2 IsoTopLeftPixelsToGrid(const glm::vec2& isoTopLeftPx, int tileW
     return { gridX, gridY };
 }
 
-// Tiled isometric maps often store object x/y in the same "shifted" iso pixel space used to keep minX >= 0.
-// Convert TMX pixel coord (shifted iso space) -> engine world space.
-static glm::vec2 TiledIsoPixelsToEngineWorld(const glm::vec2& tiledPx, int mapH, int tileW, const glm::vec2& mapOrigin)
-{
-    const float halfW = tileW * 0.5f;
-    const glm::vec2 unshift(-(mapH - 1) * halfW, 0.0f);
-    return mapOrigin + unshift + tiledPx;
-}
 
 /*
     ============================================
@@ -722,8 +714,11 @@ int main()
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            // TMX tile-object x,y = bottom-center (objectalignment="bottom")
-            glm::vec2 bottomCenterWorld = mapOrigin + instance.worldPos;
+            // Tiled stores object pixels in shifted isometric space; unshift into engine world.
+            glm::vec2 objectGrid = ObjectPixelsToGrid(instance.worldPos, tileW, tileH);
+            glm::vec2 tileTopLeftWorld = GridToIsoTopLeft(objectGrid, tileW, tileH, mapOrigin);
+            glm::vec2 bottomCenterWorld = tileTopLeftWorld + glm::vec2(tileW * 0.5f, tileH);
+
 
             // Debug (keep this!)
             static int printed = 0;
