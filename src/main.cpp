@@ -129,6 +129,41 @@ static glm::vec2 IsoTopLeftPixelsToGrid(const glm::vec2& isoTopLeftPx, int tileW
     return { gridX, gridY };
 }
 
+static glm::vec2 TiledShiftedIsoPixelsToGrid_BottomCenter(
+    const glm::vec2& tiledPx,
+    int mapH,
+    int tileW,
+    int tileH)
+{
+    const float halfW = tileW * 0.5f;
+    const float halfH = tileH * 0.5f;
+
+    // Undo Tiled's isometric pixel shift (minX >= 0).
+    const float unshiftX = tiledPx.x - (mapH - 1) * halfW;
+    const float y = tiledPx.y;
+
+    const float tx = (unshiftX / halfW + y / halfH) * 0.5f;
+    const float ty = (y / halfH - unshiftX / halfW) * 0.5f;
+    return { tx, ty };
+}
+
+// Must match TileMap::ComputeTileTopLeftWorldPos.
+static glm::vec2 GridToWorld_TileTopLeft(
+    const glm::vec2& grid,
+    int /*mapH*/,
+    int tileW,
+    int tileH,
+    const glm::vec2& mapOrigin)
+{
+    const float halfW = tileW * 0.5f;
+    const float halfH = tileH * 0.5f;
+
+    const float isoX = (grid.x - grid.y) * halfW;
+    const float isoY = (grid.x + grid.y) * halfH;
+
+    return glm::vec2(isoX, isoY) + mapOrigin;
+}
+
 
 /*
     ============================================
@@ -713,18 +748,35 @@ int main()
             if (drawSize.x <= 0.0f || drawSize.y <= 0.0f)
                 continue;
 
-            const glm::vec2 gridPos = ObjectPixelsToGrid(instance.worldPos, tileW, tileH);
-            const glm::vec2 tileTopLeftWorld = GridToIsoTopLeft(gridPos, tileW, tileH, mapOrigin);
-            const glm::vec2 bottomCenterWorld = tileTopLeftWorld + glm::vec2(tileW * 0.5f, tileH);
+            glm::vec2 grid = TiledShiftedIsoPixelsToGrid_BottomCenter(
+                instance.worldPos,
+                loadedMap.mapData.height,
+                tileW,
+                tileH);
+
+            glm::vec2 gridSnapped(std::round(grid.x), std::round(grid.y));
+
+            glm::vec2 tileTopLeftWorld = GridToWorld_TileTopLeft(
+                gridSnapped,
+                loadedMap.mapData.height,
+                tileW,
+                tileH,
+                mapOrigin);
+
+            glm::vec2 bottomCenterWorld = tileTopLeftWorld + glm::vec2(tileW * 0.5f, (float)tileH);
 
             // Debug (keep this): inspect TMX object pixels -> grid -> world conversion.
             static int printed = 0;
             if (printed < 12)
             {
+                const float halfWObj = tileW * 0.5f;
                 std::cout
                     << "OBJ gid=" << instance.tileIndex
                     << " tmxPx=(" << instance.worldPos.x << "," << instance.worldPos.y << ")"
-                    << " grid=(" << gridPos.x << "," << gridPos.y << ")"
+                    << " grid=(" << grid.x << "," << grid.y << ")"
+                    << " snapped=(" << gridSnapped.x << "," << gridSnapped.y << ")\n"
+                    << "  mapOrigin=(" << mapOrigin.x << "," << mapOrigin.y << ")"
+                    << " unshiftX=(" << (instance.worldPos.x - (loadedMap.mapData.height - 1) * halfWObj) << ")"
                     << " tileTopLeftWorld=(" << tileTopLeftWorld.x << "," << tileTopLeftWorld.y << ")"
                     << " bottomCenterWorld=(" << bottomCenterWorld.x << "," << bottomCenterWorld.y << ")"
                     << " size=(" << drawSize.x << "," << drawSize.y << ")\n";
@@ -738,8 +790,7 @@ int main()
             cmd.uvMax = resolved.uvMax;
 
             // bottom-center → top-left
-            cmd.posPx = bottomCenterWorld
-                - glm::vec2(drawSize.x * 0.5f, drawSize.y);
+            cmd.posPx = bottomCenterWorld - glm::vec2(drawSize.x * 0.5f, drawSize.y);
 
             // Depth from feet
             cmd.depthKey = DepthFromFeetWorldY(bottomCenterWorld.y);
